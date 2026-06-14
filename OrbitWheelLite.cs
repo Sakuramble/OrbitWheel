@@ -38,7 +38,6 @@ namespace OrbitWheelLite
         public int KeyCode { get; set; }
         public string Mode { get; set; }
         public string Style { get; set; }
-        public int Opacity { get; set; }
         public bool StartWithWindows { get; set; }
         public List<WheelPage> Pages { get; set; }
 
@@ -49,7 +48,6 @@ namespace OrbitWheelLite
                 KeyCode = (int)Keys.Space,
                 Mode = "Hold",
                 Style = "液态玻璃",
-                Opacity = 92,
                 StartWithWindows = false,
                 Pages = new List<WheelPage> {
                     new WheelPage {
@@ -106,7 +104,6 @@ namespace OrbitWheelLite
                 while (p.Actions.Count < 6) p.Actions.Add(new ActionItem { Name = "空", Type = "None", Target = "" });
                 if (p.Actions.Count > 6) p.Actions.RemoveRange(6, p.Actions.Count - 6);
             }
-            if (c.Opacity < 20 || c.Opacity > 100) c.Opacity = 92;
             if (String.IsNullOrEmpty(c.Mode)) c.Mode = "Hold";
             if (String.IsNullOrEmpty(c.Style)) c.Style = "液态玻璃";
         }
@@ -137,36 +134,7 @@ namespace OrbitWheelLite
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfo(string path, uint attributes, ref ShellFileInfo info, uint size, uint flags);
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct ShellFileInfo { public IntPtr Icon; public int IconIndex; public uint Attributes; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName; }
-        [DllImport("user32.dll")] public static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
-        [DllImport("dwmapi.dll")] public static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
-        [StructLayout(LayoutKind.Sequential)]
-        public struct Margins { public int Left; public int Right; public int Top; public int Bottom; }
-        [StructLayout(LayoutKind.Sequential)]
-        public struct AccentPolicy { public int AccentState; public int AccentFlags; public int GradientColor; public int AnimationId; }
-        [StructLayout(LayoutKind.Sequential)]
-        public struct WindowCompositionAttributeData { public int Attribute; public IntPtr Data; public int SizeOfData; }
         public delegate IntPtr KeyboardProc(int code, IntPtr wp, IntPtr lp);
-
-        public static bool ApplyRealtimeEffect(IntPtr handle, string style, int opacity)
-        {
-            Margins margins = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-            DwmExtendFrameIntoClientArea(handle, ref margins);
-            AccentPolicy accent = new AccentPolicy();
-            accent.AccentState = style == "高斯模糊" ? 3 : 4;
-            accent.AccentFlags = 2;
-            int alpha = Math.Max(20, Math.Min(210, (int)(opacity * (style == "亚克力" ? 1.9 : style == "液态玻璃" ? 1.25 : 0.65))));
-            int red = style == "液态玻璃" ? 38 : 25;
-            int green = style == "液态玻璃" ? 48 : 31;
-            int blue = style == "液态玻璃" ? 72 : 45;
-            accent.GradientColor = (alpha << 24) | (blue << 16) | (green << 8) | red;
-            int size = Marshal.SizeOf(accent);
-            IntPtr ptr = Marshal.AllocHGlobal(size);
-            try {
-                Marshal.StructureToPtr(accent, ptr, false);
-                WindowCompositionAttributeData data = new WindowCompositionAttributeData { Attribute = 19, Data = ptr, SizeOfData = size };
-                return SetWindowCompositionAttribute(handle, ref data) != 0;
-            } finally { Marshal.FreeHGlobal(ptr); }
-        }
     }
 
     class HotkeyWindow : NativeWindow, IDisposable
@@ -255,7 +223,6 @@ namespace OrbitWheelLite
             KeyPreview = true;
             DoubleBuffered = true;
             Cursor = Cursors.Cross;
-            Opacity = 1.0;
             Size = new Size(510, 510);
             Point mouse = Cursor.Position;
             Location = new Point(mouse.X - Width / 2, mouse.Y - Height / 2);
@@ -307,12 +274,12 @@ namespace OrbitWheelLite
             using (Graphics g = Graphics.FromImage(result)) {
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.DrawImage(small, new Rectangle(Point.Empty, result.Size));
-                int materialAlpha = (int)((config.Opacity / 100.0) * (style == "亚克力" ? 205 : style == "液态玻璃" ? 118 : 70));
+                int materialAlpha = style == "亚克力" ? 188 : style == "液态玻璃" ? 105 : 58;
                 Color tint = style == "亚克力" ? Color.FromArgb(materialAlpha, 23, 29, 43) : style == "液态玻璃" ? Color.FromArgb(materialAlpha, 28, 48, 88) : Color.FromArgb(materialAlpha, 20, 25, 38);
                 using (SolidBrush b = new SolidBrush(tint)) g.FillRectangle(b, 0, 0, result.Width, result.Height);
                 if (style == "亚克力") {
                     Random random = new Random(8);
-                    using (SolidBrush grain = new SolidBrush(Color.FromArgb(Math.Max(8, config.Opacity / 7), 255, 255, 255)))
+                    using (SolidBrush grain = new SolidBrush(Color.FromArgb(11, 255, 255, 255)))
                         for (int i = 0; i < 1500; i++) g.FillRectangle(grain, random.Next(result.Width), random.Next(result.Height), 1, 1);
                 }
             }
@@ -394,7 +361,7 @@ namespace OrbitWheelLite
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             bool acrylic = config.Style == "亚克力";
             bool blur = config.Style == "高斯模糊";
-            int fillAlpha = (int)((config.Opacity / 100.0) * (acrylic ? 80 : blur ? 22 : 45));
+            int fillAlpha = acrylic ? 70 : blur ? 18 : 38;
             Color baseColor = acrylic ? Color.FromArgb(fillAlpha, 35, 42, 58) : blur ? Color.FromArgb(fillAlpha, 28, 33, 48) : Color.FromArgb(fillAlpha, 22, 36, 66);
             Color accent = acrylic ? Color.FromArgb(150, 92, 130, 185) : blur ? Color.FromArgb(90, 160, 200, 245) : Color.FromArgb(125, 87, 190, 255);
 
@@ -729,12 +696,15 @@ namespace OrbitWheelLite
             Label hint = new Label { Text = "所有已安装应用与快捷方式", Left = 30, Top = 62, Width = 400, Height = 24, ForeColor = Color.FromArgb(150, 180, 215) };
             search = new TextBox { Left = 28, Top = 98, Width = 564, Height = 34, BackColor = Color.FromArgb(35, 44, 62), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Microsoft YaHei UI", 11f) };
             list = new ListBox { Left = 28, Top = 148, Width = 564, Height = 430, BackColor = Color.FromArgb(27, 34, 49), ForeColor = Color.White, BorderStyle = BorderStyle.None, ItemHeight = 54, Font = new Font("Microsoft YaHei UI", 11f), DrawMode = DrawMode.OwnerDrawFixed };
+            Button browse = new Button { Text = "浏览文件…", Left = 28, Top = 594, Width = 150, Height = 40, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 58, 80), ForeColor = Color.White };
             Button choose = new Button { Text = "选择应用", Left = 432, Top = 594, Width = 160, Height = 40, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(67, 126, 230), ForeColor = Color.White };
+            browse.FlatAppearance.BorderSize = 0;
             choose.FlatAppearance.BorderSize = 0;
-            Controls.AddRange(new Control[] { title, hint, search, list, choose });
+            Controls.AddRange(new Control[] { title, hint, search, list, browse, choose });
             search.TextChanged += delegate { Filter(); };
             list.DoubleClick += delegate { Accept(); };
             list.DrawItem += DrawApplication;
+            browse.Click += delegate { BrowseFile(); };
             choose.Click += delegate { Accept(); };
             all = ApplicationCatalog.Load();
             Filter();
@@ -755,6 +725,16 @@ namespace OrbitWheelLite
             if (SelectedApplication == null) return;
             DialogResult = DialogResult.OK;
             Close();
+        }
+
+        private void BrowseFile()
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog { Title = "选择应用程序或快捷方式", Filter = "应用与快捷方式 (*.exe;*.lnk)|*.exe;*.lnk|所有文件 (*.*)|*.*" }) {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                SelectedApplication = new ApplicationChoice { Name = Path.GetFileNameWithoutExtension(dialog.FileName), Target = dialog.FileName };
+                DialogResult = DialogResult.OK;
+                Close();
+            }
         }
 
         private void DrawApplication(object sender, DrawItemEventArgs e)
@@ -791,9 +771,7 @@ namespace OrbitWheelLite
         private TextBox hotkeyRecorder;
         private int recordedModifiers;
         private int recordedKey;
-        private TrackBar opacity;
         private CheckBox startup;
-        private Label opacityLabel;
         private Label effectDescription;
         private bool loadingGrid;
         private bool choosingApp;
@@ -807,9 +785,9 @@ namespace OrbitWheelLite
             Text = "OrbitWheel Preview 设置";
             Icon = IconFactory.AppIcon();
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(940, 620);
-            MinimumSize = new Size(850, 560);
-            BackColor = Color.FromArgb(22, 27, 39);
+            ClientSize = new Size(980, 650);
+            MinimumSize = new Size(900, 600);
+            BackColor = Color.FromArgb(14, 19, 30);
             ForeColor = Color.White;
             Font = new Font("Microsoft YaHei UI", 9.5f);
             initializing = true;
@@ -821,21 +799,21 @@ namespace OrbitWheelLite
 
         private void Build()
         {
-            Label title = L("OrbitWheel", 24, 18, 300, 36, 20, true);
+            Label title = L("OrbitWheel", 30, 22, 300, 40, 22, true);
             Controls.Add(title);
-            Controls.Add(L("径向快捷操作中心", 26, 53, 300, 24, 9, false));
+            Label subtitle = L("把常用操作放在鼠标身边", 32, 63, 330, 24, 9, false); subtitle.ForeColor = Color.FromArgb(135, 166, 205); Controls.Add(subtitle);
 
-            Panel pageBox = Box("页面与六个扇区", 22, 92, 650, 470);
-            pages = new ListBox { Left = 18, Top = 42, Width = 150, Height = 358, BackColor = Color.FromArgb(31,38,54), ForeColor = Color.White, BorderStyle = BorderStyle.None };
+            Panel pageBox = Box("页面与六个扇区", 26, 106, 674, 500);
+            pages = new ListBox { Left = 18, Top = 48, Width = 150, Height = 372, BackColor = Color.FromArgb(24,32,48), ForeColor = Color.White, BorderStyle = BorderStyle.None, ItemHeight = 34 };
             pages.SelectedIndexChanged += delegate { ShowPage(); };
             pageBox.Controls.Add(pages);
-            Button add = B("＋", 18, 414, 70, 40); add.Font = new Font("Segoe UI", 17f); add.Click += delegate { AddPage(); }; pageBox.Controls.Add(add);
-            Button del = B("−", 98, 414, 70, 40); del.Font = new Font("Segoe UI", 17f); del.BackColor = Color.FromArgb(68, 49, 65); del.Click += delegate { DeletePage(); }; pageBox.Controls.Add(del);
+            Button add = B("＋", 18, 438, 70, 40); add.Font = new Font("Segoe UI", 17f); add.Click += delegate { AddPage(); }; pageBox.Controls.Add(add);
+            Button del = B("−", 98, 438, 70, 40); del.Font = new Font("Segoe UI", 17f); del.BackColor = Color.FromArgb(62, 42, 57); del.Click += delegate { DeletePage(); }; pageBox.Controls.Add(del);
             ToolTip pageTips = new ToolTip();
             pageTips.SetToolTip(add, "添加新页面");
             pageTips.SetToolTip(del, "删除当前页面");
 
-            pageName = new TextBox { Left = 184, Top = 42, Width = 446, Height = 28, BackColor = Color.FromArgb(40,48,66), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            pageName = new TextBox { Left = 184, Top = 48, Width = 466, Height = 30, BackColor = Color.FromArgb(31,42,61), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
             pageName.TextChanged += delegate {
                 if (!showingPage && pages.SelectedIndex >= 0) {
                     config.Pages[pages.SelectedIndex].Name = pageName.Text;
@@ -846,13 +824,13 @@ namespace OrbitWheelLite
             };
             pageBox.Controls.Add(pageName);
 
-            grid = new DataGridView { Left = 184, Top = 78, Width = 446, Height = 338, BackgroundColor = Color.FromArgb(31,38,54), ForeColor = Color.White, GridColor = Color.FromArgb(48,58,78), BorderStyle = BorderStyle.None, RowHeadersVisible = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal, ColumnHeadersHeight = 34, RowTemplate = { Height = 38 } };
+            grid = new DataGridView { Left = 184, Top = 92, Width = 466, Height = 340, BackgroundColor = Color.FromArgb(24,32,48), ForeColor = Color.White, GridColor = Color.FromArgb(42,55,77), BorderStyle = BorderStyle.None, RowHeadersVisible = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal, ColumnHeadersHeight = 38, RowTemplate = { Height = 42 } };
             grid.EnableHeadersVisualStyles = false;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(43,52,72);
+            grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(35,47,68);
             grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
-            grid.DefaultCellStyle.BackColor = Color.FromArgb(31,38,54);
+            grid.DefaultCellStyle.BackColor = Color.FromArgb(24,32,48);
             grid.DefaultCellStyle.ForeColor = Color.White;
-            grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(72,105,160);
+            grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(50,91,151);
             grid.Columns.Add("slot", "位置");
             grid.Columns.Add("name", "名称");
             DataGridViewComboBoxColumn typeCol = new DataGridViewComboBoxColumn { Name = "type", HeaderText = "动作类型" };
@@ -866,10 +844,10 @@ namespace OrbitWheelLite
             grid.CellValueChanged += delegate { HandleCellChange(); };
             grid.SelectionChanged += delegate { UpdateActionEditor(); };
             pageBox.Controls.Add(grid);
-            pageBox.Controls.Add(L("选择“打开程序”时会自动打开开始菜单程序目录。", 184, 430, 446, 25, 8, false));
+            Label appHint = L("选择“打开程序”时将打开 Applications 应用选择器。", 184, 450, 446, 25, 8, false); appHint.ForeColor = Color.FromArgb(125, 156, 195); pageBox.Controls.Add(appHint);
             Controls.Add(pageBox);
 
-            Panel prefs = Box("行为与外观", 690, 92, 226, 470);
+            Panel prefs = Box("行为与外观", 720, 106, 234, 500);
             prefs.Controls.Add(L("快捷键", 16, 43, 180, 22, 9, false));
             hotkeyRecorder = new TextBox { Left = 16, Top = 66, Width = 186, Height = 31, ReadOnly = true, BackColor = Color.FromArgb(36, 47, 68), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, TextAlign = HorizontalAlignment.Center, Font = new Font("Segoe UI", 10f) };
             hotkeyRecorder.KeyDown += RecordHotkey;
@@ -881,13 +859,9 @@ namespace OrbitWheelLite
             style = C(16, 191, 186); style.Items.AddRange(new object[] { "液态玻璃", "高斯模糊", "亚克力" }); prefs.Controls.Add(style);
             effectDescription = L("", 16, 224, 190, 38, 8, false); effectDescription.ForeColor = Color.FromArgb(160, 185, 215); prefs.Controls.Add(effectDescription);
             style.SelectedIndexChanged += delegate { UpdateEffectDescription(); };
-            prefs.Controls.Add(L("材质透明度", 16, 270, 110, 22, 9, false));
-            opacityLabel = L("", 150, 270, 52, 22, 9, false); opacityLabel.TextAlign = ContentAlignment.TopRight; prefs.Controls.Add(opacityLabel);
-            opacity = new TrackBar { Left = 12, Top = 293, Width = 194, Minimum = 20, Maximum = 100, TickFrequency = 10, BackColor = prefs.BackColor };
-            opacity.ValueChanged += delegate { opacityLabel.Text = opacity.Value + "%"; AutoSave(); }; prefs.Controls.Add(opacity);
-            startup = new CheckBox { Left = 16, Top = 345, Width = 190, Height = 28, Text = "随 Windows 自动启动", ForeColor = Color.White }; prefs.Controls.Add(startup);
-            prefs.Controls.Add(L("滚轮切换页面 · Esc 关闭", 16, 382, 190, 25, 8, false));
-            prefs.Controls.Add(L("所有更改都会自动保存", 16, 423, 190, 25, 8, false));
+            startup = new CheckBox { Left = 16, Top = 284, Width = 190, Height = 28, Text = "随 Windows 自动启动", ForeColor = Color.White }; prefs.Controls.Add(startup);
+            prefs.Controls.Add(L("滚轮切换页面 · Esc 关闭", 16, 328, 190, 25, 8, false));
+            prefs.Controls.Add(L("所有更改都会自动保存", 16, 368, 190, 25, 8, false));
             Controls.Add(prefs);
 
             mode.SelectedIndexChanged += delegate { AutoSave(); };
@@ -900,7 +874,6 @@ namespace OrbitWheelLite
             mode.SelectedIndex = config.Mode == "Hold" ? 1 : 0;
             style.SelectedItem = config.Style;
             UpdateEffectDescription();
-            opacity.Value = config.Opacity;
             startup.Checked = config.StartWithWindows;
         }
 
@@ -1010,7 +983,6 @@ namespace OrbitWheelLite
             config.KeyCode = recordedKey;
             config.Mode = mode.SelectedIndex == 1 ? "Hold" : "Click";
             config.Style = Convert.ToString(style.SelectedItem);
-            config.Opacity = opacity.Value;
             config.StartWithWindows = startup.Checked;
             Startup.Set(config.StartWithWindows);
             ConfigStore.Save(config);
