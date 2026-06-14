@@ -619,7 +619,9 @@ namespace OrbitWheelLite
                 int cellWidth = systemIconSheet.Width / 4;
                 int cellHeight = systemIconSheet.Height / 3;
                 int insetX = 58, insetY = 54;
-                Rectangle source = new Rectangle(cell.X * cellWidth + insetX, cell.Y * cellHeight + insetY, cellWidth - insetX * 2, cellHeight - insetY * 2);
+                Rectangle source = type == "Sleep"
+                    ? new Rectangle(cell.X * cellWidth + 22, cell.Y * cellHeight + 46, cellWidth - 24, cellHeight - 92)
+                    : new Rectangle(cell.X * cellWidth + insetX, cell.Y * cellHeight + insetY, cellWidth - insetX * 2, cellHeight - insetY * 2);
                 InterpolationMode previous = g.InterpolationMode;
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.DrawImage(systemIconSheet, destination, source, GraphicsUnit.Pixel);
