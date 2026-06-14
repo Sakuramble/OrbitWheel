@@ -10,12 +10,12 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-[assembly: AssemblyTitle("OrbitWheel-Lite")]
-[assembly: AssemblyDescription("OrbitWheel-Lite Fin - 径向快捷操作中心")]
+[assembly: AssemblyTitle("OrbitWheel Preview")]
+[assembly: AssemblyDescription("OrbitWheel Preview - 径向快捷操作中心")]
 [assembly: AssemblyCompany("OrbitWheel")]
 [assembly: AssemblyProduct("OrbitWheel")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace OrbitWheelLite
 {
@@ -131,6 +131,12 @@ namespace OrbitWheelLite
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)] public static extern IntPtr GetModuleHandle(string name);
         [DllImport("user32.dll")] public static extern bool LockWorkStation();
         [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+        [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+        [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfo(string path, uint attributes, ref ShellFileInfo info, uint size, uint flags);
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct ShellFileInfo { public IntPtr Icon; public int IconIndex; public uint Attributes; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName; }
         [DllImport("user32.dll")] public static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
         [DllImport("dwmapi.dll")] public static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
         [StructLayout(LayoutKind.Sequential)]
@@ -241,7 +247,7 @@ namespace OrbitWheelLite
         public WheelForm(AppConfig c)
         {
             config = c;
-            Text = "OrbitWheel-Lite Menu";
+            Text = "OrbitWheel Preview Menu";
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
@@ -393,7 +399,7 @@ namespace OrbitWheelLite
             Color accent = acrylic ? Color.FromArgb(150, 92, 130, 185) : blur ? Color.FromArgb(90, 160, 200, 245) : Color.FromArgb(125, 87, 190, 255);
 
             for (int i = 0; i < 6; i++) {
-                using (GraphicsPath path = SegmentPath(center, Inner + 11, Outer, i * 60 - 30, 60)) {
+                using (GraphicsPath path = SegmentPath(center, Inner + 14, Outer - 3, i * 60 - 28, 56)) {
                     using (SolidBrush fill = new SolidBrush(i == selected ? accent : baseColor)) g.FillPath(fill, path);
                     using (Pen border = new Pen(Color.FromArgb(i == selected ? 220 : 46, 220, 240, 255), i == selected ? 2f : 1f)) g.DrawPath(border, path);
                 }
@@ -461,13 +467,8 @@ namespace OrbitWheelLite
             double angle = i * Math.PI / 3;
             int radius = 151;
             Point p = new Point(center.X + (int)(Math.Cos(angle) * radius), center.Y + (int)(Math.Sin(angle) * radius));
-            Rectangle iconRect = new Rectangle(p.X - 22, p.Y - 31, 44, 44);
+            Rectangle iconRect = new Rectangle(p.X - 28, p.Y - 28, 56, 56);
             ActionIcons.Draw(g, a, iconRect, i == selected);
-            using (Font f = new Font("Microsoft YaHei UI", 9.5f, i == selected ? FontStyle.Bold : FontStyle.Regular))
-            using (SolidBrush b = new SolidBrush(Color.White)) {
-                StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                g.DrawString(a.Name, f, b, new RectangleF(p.X - 63, p.Y + 17, 126, 26), sf);
-            }
         }
     }
 
@@ -477,7 +478,7 @@ namespace OrbitWheelLite
         {
             try {
                 switch (a.Type) {
-                    case "App": Start(a.Target, ""); break;
+                    case "App": ActivateOrStart(a.Target); break;
                     case "Explorer": Start("explorer.exe", "shell:ThisPCFolder"); break;
                     case "Settings": showSettings(); break;
                     case "Lock": Native.LockWorkStation(); break;
@@ -489,7 +490,7 @@ namespace OrbitWheelLite
                     case "Mute": MediaKey(0xAD); break;
                     case "Command": Start("cmd.exe", "/c " + a.Target); break;
                 }
-            } catch (Exception ex) { MessageBox.Show("无法执行“" + a.Name + "”\n" + ex.Message, "OrbitWheel-Lite"); }
+            } catch (Exception ex) { MessageBox.Show("无法执行“" + a.Name + "”\n" + ex.Message, "OrbitWheel Preview"); }
         }
 
         private static void MediaKey(byte key)
@@ -503,6 +504,39 @@ namespace OrbitWheelLite
             ProcessStartInfo info = new ProcessStartInfo(file, args);
             info.UseShellExecute = true;
             Process.Start(info);
+        }
+
+        private static void ActivateOrStart(string target)
+        {
+            string executable = ShortcutResolver.ResolveTarget(target);
+            if (!String.IsNullOrEmpty(executable) && File.Exists(executable)) {
+                string processName = Path.GetFileNameWithoutExtension(executable);
+                foreach (Process process in Process.GetProcessesByName(processName)) {
+                    if (process.MainWindowHandle != IntPtr.Zero) {
+                        Native.ShowWindow(process.MainWindowHandle, 9);
+                        Native.SetForegroundWindow(process.MainWindowHandle);
+                        return;
+                    }
+                }
+            }
+            if (target.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+                Start("explorer.exe", target);
+            else
+                Start(target, "");
+        }
+    }
+
+    static class ShortcutResolver
+    {
+        public static string ResolveTarget(string path)
+        {
+            if (String.IsNullOrEmpty(path) || !path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) return path;
+            try {
+                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                object shell = Activator.CreateInstance(shellType);
+                object shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { path });
+                return Convert.ToString(shortcut.GetType().InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null));
+            } catch { return path; }
         }
     }
 
@@ -519,8 +553,8 @@ namespace OrbitWheelLite
 
         public static void Draw(Graphics g, ActionItem a, Rectangle r, bool selected)
         {
-            if (a.Type == "App" && File.Exists(a.Target)) {
-                try { using (Icon icon = Icon.ExtractAssociatedIcon(a.Target)) { g.DrawIcon(icon, r); return; } } catch { }
+            if (a.Type == "App") {
+                using (Icon appIcon = GetApplicationIcon(a.Target)) if (appIcon != null) { g.DrawIcon(appIcon, r); return; }
             }
             Color fg = Color.FromArgb(245, 245, 250, 255);
             Rectangle tile = new Rectangle(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6);
@@ -532,6 +566,14 @@ namespace OrbitWheelLite
                 p.StartCap = p.EndCap = LineCap.Round;
                 int x = r.X, y = r.Y, w = r.Width, h = r.Height, cx = x + w / 2, cy = y + h / 2;
                 switch (a.Type) {
+                    case "App":
+                        using (Font appFont = new Font("Segoe UI", 16f, FontStyle.Bold))
+                        using (SolidBrush appText = new SolidBrush(fg)) {
+                            string initial = String.IsNullOrWhiteSpace(a.Name) ? "A" : a.Name.Substring(0, 1).ToUpper();
+                            SizeF size = g.MeasureString(initial, appFont);
+                            g.DrawString(initial, appFont, appText, cx - size.Width / 2, cy - size.Height / 2);
+                        }
+                        break;
                     case "Explorer":
                         g.DrawRectangle(p, x + 9, y + 16, w - 18, h - 24);
                         g.DrawLine(p, x + 10, y + 16, x + 20, y + 10);
@@ -578,13 +620,25 @@ namespace OrbitWheelLite
                 }
             }
         }
+
+        public static Icon GetApplicationIcon(string target)
+        {
+            try {
+                string iconTarget = ShortcutResolver.ResolveTarget(target);
+                if (File.Exists(iconTarget)) { using (Icon icon = Icon.ExtractAssociatedIcon(iconTarget)) return (Icon)icon.Clone(); }
+                Native.ShellFileInfo info = new Native.ShellFileInfo();
+                IntPtr result = Native.SHGetFileInfo(target, 0, ref info, (uint)Marshal.SizeOf(info), 0x100);
+                if (result != IntPtr.Zero && info.Icon != IntPtr.Zero) { using (Icon icon = Icon.FromHandle(info.Icon)) return (Icon)icon.Clone(); }
+            } catch { }
+            return null;
+        }
     }
 
     static class ActionNames
     {
         private static readonly Dictionary<string, string> Names = new Dictionary<string, string> {
             {"None","无操作"}, {"App","打开程序"}, {"Command","执行命令"},
-            {"Explorer","打开资源管理器"}, {"Settings","打开 OrbitWheel-Lite 设置"},
+            {"Explorer","打开资源管理器"}, {"Settings","打开 OrbitWheel Preview 设置"},
             {"Lock","锁定电脑"}, {"Sleep","进入睡眠"}, {"Shutdown","关闭电脑"},
             {"Restart","重新启动"}, {"VolumeUp","增大音量"}, {"VolumeDown","减小音量"},
             {"Mute","静音 / 取消静音"}
@@ -604,13 +658,139 @@ namespace OrbitWheelLite
         }
     }
 
+    class ApplicationChoice
+    {
+        public string Name { get; set; }
+        public string Target { get; set; }
+        public override string ToString() { return Name; }
+    }
+
+    static class ApplicationCatalog
+    {
+        private static string ResolveAppsFolderPath(string path)
+        {
+            if (String.IsNullOrWhiteSpace(path)) return path;
+            Dictionary<string, string> roots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+                {"{6D809377-6AF0-444B-8957-A3773F02200E}", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)},
+                {"{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)},
+                {"{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}", Environment.GetFolderPath(Environment.SpecialFolder.System)},
+                {"{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27}", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SysWOW64")},
+                {"{F38BF404-1D43-42F2-9305-67DE0B28FC23}", Environment.GetFolderPath(Environment.SpecialFolder.Windows)}
+            };
+            foreach (KeyValuePair<string,string> root in roots) {
+                if (path.StartsWith(root.Key + "\\", StringComparison.OrdinalIgnoreCase)) {
+                    string candidate = Path.Combine(root.Value, path.Substring(root.Key.Length + 1));
+                    if (File.Exists(candidate)) return candidate;
+                }
+            }
+            return path;
+        }
+
+        public static List<ApplicationChoice> Load()
+        {
+            List<ApplicationChoice> result = new List<ApplicationChoice>();
+            try {
+                Type shellType = Type.GetTypeFromProgID("Shell.Application");
+                object shell = Activator.CreateInstance(shellType);
+                object folder = shellType.InvokeMember("NameSpace", BindingFlags.InvokeMethod, null, shell, new object[] { "shell:AppsFolder" });
+                object items = folder.GetType().InvokeMember("Items", BindingFlags.InvokeMethod, null, folder, null);
+                int count = Convert.ToInt32(items.GetType().InvokeMember("Count", BindingFlags.GetProperty, null, items, null));
+                for (int i = 0; i < count; i++) {
+                    object item = items.GetType().InvokeMember("Item", BindingFlags.InvokeMethod, null, items, new object[] { i });
+                    string name = Convert.ToString(item.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, item, null));
+                    string path = Convert.ToString(item.GetType().InvokeMember("Path", BindingFlags.GetProperty, null, item, null));
+                    path = ResolveAppsFolderPath(path);
+                    if (!String.IsNullOrWhiteSpace(name) && !String.IsNullOrWhiteSpace(path))
+                        result.Add(new ApplicationChoice { Name = name, Target = File.Exists(path) ? path : path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) ? path : "shell:AppsFolder\\" + path });
+                }
+            } catch { }
+            result.Sort(delegate(ApplicationChoice a, ApplicationChoice b) { return String.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase); });
+            return result;
+        }
+    }
+
+    class ApplicationPicker : Form
+    {
+        private TextBox search;
+        private ListBox list;
+        private List<ApplicationChoice> all;
+        public ApplicationChoice SelectedApplication { get; private set; }
+
+        public ApplicationPicker()
+        {
+            Text = "选择应用 - Applications";
+            Icon = IconFactory.AppIcon();
+            StartPosition = FormStartPosition.CenterParent;
+            ClientSize = new Size(620, 650);
+            BackColor = Color.FromArgb(18, 23, 35);
+            ForeColor = Color.White;
+            Font = new Font("Microsoft YaHei UI", 10f);
+            Label title = new Label { Text = "Applications", Left = 28, Top = 22, Width = 400, Height = 38, Font = new Font("Segoe UI", 22f, FontStyle.Bold), ForeColor = Color.White };
+            Label hint = new Label { Text = "所有已安装应用与快捷方式", Left = 30, Top = 62, Width = 400, Height = 24, ForeColor = Color.FromArgb(150, 180, 215) };
+            search = new TextBox { Left = 28, Top = 98, Width = 564, Height = 34, BackColor = Color.FromArgb(35, 44, 62), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Microsoft YaHei UI", 11f) };
+            list = new ListBox { Left = 28, Top = 148, Width = 564, Height = 430, BackColor = Color.FromArgb(27, 34, 49), ForeColor = Color.White, BorderStyle = BorderStyle.None, ItemHeight = 54, Font = new Font("Microsoft YaHei UI", 11f), DrawMode = DrawMode.OwnerDrawFixed };
+            Button choose = new Button { Text = "选择应用", Left = 432, Top = 594, Width = 160, Height = 40, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(67, 126, 230), ForeColor = Color.White };
+            choose.FlatAppearance.BorderSize = 0;
+            Controls.AddRange(new Control[] { title, hint, search, list, choose });
+            search.TextChanged += delegate { Filter(); };
+            list.DoubleClick += delegate { Accept(); };
+            list.DrawItem += DrawApplication;
+            choose.Click += delegate { Accept(); };
+            all = ApplicationCatalog.Load();
+            Filter();
+        }
+
+        private void Filter()
+        {
+            string query = search.Text.Trim();
+            list.BeginUpdate(); list.Items.Clear();
+            foreach (ApplicationChoice app in all)
+                if (query.Length == 0 || app.Name.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0) list.Items.Add(app);
+            list.EndUpdate();
+        }
+
+        private void Accept()
+        {
+            SelectedApplication = list.SelectedItem as ApplicationChoice;
+            if (SelectedApplication == null) return;
+            DialogResult = DialogResult.OK;
+            Close();
+        }
+
+        private void DrawApplication(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= list.Items.Count) return;
+            ApplicationChoice app = (ApplicationChoice)list.Items[e.Index];
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+            using (SolidBrush background = new SolidBrush(selected ? Color.FromArgb(56, 88, 138) : Color.FromArgb(27, 34, 49))) e.Graphics.FillRectangle(background, e.Bounds);
+            using (Icon icon = ActionIcons.GetApplicationIcon(app.Target)) {
+                if (icon != null) e.Graphics.DrawIcon(icon, new Rectangle(e.Bounds.X + 14, e.Bounds.Y + 9, 36, 36));
+                else {
+                    Rectangle fallback = new Rectangle(e.Bounds.X + 14, e.Bounds.Y + 9, 36, 36);
+                    using (SolidBrush fb = new SolidBrush(Color.FromArgb(70, 122, 220))) e.Graphics.FillEllipse(fb, fallback);
+                    using (Font ff = new Font("Segoe UI", 12f, FontStyle.Bold))
+                    using (SolidBrush ft = new SolidBrush(Color.White)) {
+                        string initial = String.IsNullOrWhiteSpace(app.Name) ? "A" : app.Name.Substring(0, 1).ToUpper();
+                        SizeF size = e.Graphics.MeasureString(initial, ff);
+                        e.Graphics.DrawString(initial, ff, ft, fallback.X + (fallback.Width - size.Width) / 2, fallback.Y + (fallback.Height - size.Height) / 2);
+                    }
+                }
+            }
+            using (SolidBrush text = new SolidBrush(Color.White)) e.Graphics.DrawString(app.Name, Font, text, e.Bounds.X + 64, e.Bounds.Y + 16);
+            using (Pen line = new Pen(Color.FromArgb(36, 52, 72))) e.Graphics.DrawLine(line, e.Bounds.X + 64, e.Bounds.Bottom - 1, e.Bounds.Right - 12, e.Bounds.Bottom - 1);
+        }
+    }
+
     class SettingsForm : Form
     {
         private AppConfig config;
         private ListBox pages;
         private DataGridView grid;
         private TextBox pageName;
-        private ComboBox modifier, key, mode, style;
+        private ComboBox mode, style;
+        private TextBox hotkeyRecorder;
+        private int recordedModifiers;
+        private int recordedKey;
         private TrackBar opacity;
         private CheckBox startup;
         private Label opacityLabel;
@@ -624,7 +804,7 @@ namespace OrbitWheelLite
         public SettingsForm(AppConfig c)
         {
             config = c;
-            Text = "OrbitWheel-Lite 设置";
+            Text = "OrbitWheel Preview 设置";
             Icon = IconFactory.AppIcon();
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(940, 620);
@@ -641,7 +821,7 @@ namespace OrbitWheelLite
 
         private void Build()
         {
-            Label title = L("OrbitWheel-Lite", 24, 18, 300, 36, 20, true);
+            Label title = L("OrbitWheel", 24, 18, 300, 36, 20, true);
             Controls.Add(title);
             Controls.Add(L("径向快捷操作中心", 26, 53, 300, 24, 9, false));
 
@@ -691,8 +871,10 @@ namespace OrbitWheelLite
 
             Panel prefs = Box("行为与外观", 690, 92, 226, 470);
             prefs.Controls.Add(L("快捷键", 16, 43, 180, 22, 9, false));
-            modifier = C(16, 66, 90); modifier.Items.AddRange(new object[] { "Ctrl", "Alt", "Shift", "Win", "Ctrl+Alt", "Ctrl+Shift" }); prefs.Controls.Add(modifier);
-            key = C(112, 66, 90); foreach (Keys k in new Keys[] { Keys.Space, Keys.Q, Keys.W, Keys.E, Keys.R, Keys.F1, Keys.F2, Keys.F8, Keys.F9, Keys.F10, Keys.F11, Keys.F12 }) key.Items.Add(k); prefs.Controls.Add(key);
+            hotkeyRecorder = new TextBox { Left = 16, Top = 66, Width = 186, Height = 31, ReadOnly = true, BackColor = Color.FromArgb(36, 47, 68), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, TextAlign = HorizontalAlignment.Center, Font = new Font("Segoe UI", 10f) };
+            hotkeyRecorder.KeyDown += RecordHotkey;
+            hotkeyRecorder.Enter += delegate { hotkeyRecorder.Text = "请按下新的快捷键…"; };
+            prefs.Controls.Add(hotkeyRecorder);
             prefs.Controls.Add(L("触发模式", 16, 105, 180, 22, 9, false));
             mode = C(16, 128, 186); mode.Items.AddRange(new object[] { "点击模式", "按住并松开执行" }); prefs.Controls.Add(mode);
             prefs.Controls.Add(L("视觉材质", 16, 168, 180, 22, 9, false));
@@ -708,14 +890,13 @@ namespace OrbitWheelLite
             prefs.Controls.Add(L("所有更改都会自动保存", 16, 423, 190, 25, 8, false));
             Controls.Add(prefs);
 
-            modifier.SelectedIndexChanged += delegate { AutoSave(); };
-            key.SelectedIndexChanged += delegate { AutoSave(); };
             mode.SelectedIndexChanged += delegate { AutoSave(); };
             style.SelectedIndexChanged += delegate { AutoSave(); };
             startup.CheckedChanged += delegate { AutoSave(); };
 
-            modifier.SelectedItem = ModifierName(config.Modifiers);
-            key.SelectedItem = (Keys)config.KeyCode;
+            recordedModifiers = config.Modifiers;
+            recordedKey = config.KeyCode;
+            hotkeyRecorder.Text = HotkeyText(recordedModifiers, recordedKey);
             mode.SelectedIndex = config.Mode == "Hold" ? 1 : 0;
             style.SelectedItem = config.Style;
             UpdateEffectDescription();
@@ -809,14 +990,11 @@ namespace OrbitWheelLite
         {
             if (grid.CurrentRow == null || choosingApp) return;
             choosingApp = true;
-            string commonPrograms = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs");
-            string userPrograms = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs");
-            string initial = Directory.Exists(commonPrograms) ? commonPrograms : userPrograms;
-            using (OpenFileDialog d = new OpenFileDialog { Title = "选择要打开的应用", InitialDirectory = initial, Filter = "应用与开始菜单快捷方式 (*.exe;*.lnk)|*.exe;*.lnk|所有文件 (*.*)|*.*" }) {
-                if (d.ShowDialog() == DialogResult.OK) {
-                    grid.CurrentRow.Cells[1].Value = Path.GetFileNameWithoutExtension(d.FileName);
+            using (ApplicationPicker d = new ApplicationPicker()) {
+                if (d.ShowDialog(this) == DialogResult.OK && d.SelectedApplication != null) {
+                    grid.CurrentRow.Cells[1].Value = d.SelectedApplication.Name;
                     grid.CurrentRow.Cells[2].Value = ActionNames.Chinese("App");
-                    grid.CurrentRow.Cells[3].Value = d.FileName;
+                    grid.CurrentRow.Cells[3].Value = d.SelectedApplication.Target;
                 }
             }
             choosingApp = false;
@@ -828,8 +1006,8 @@ namespace OrbitWheelLite
         {
             if (initializing || loadingGrid || showingPage || choosingApp) return;
             CommitPage();
-            config.Modifiers = ModifierValue(Convert.ToString(modifier.SelectedItem));
-            if (key.SelectedItem != null) config.KeyCode = (int)(Keys)key.SelectedItem;
+            config.Modifiers = recordedModifiers;
+            config.KeyCode = recordedKey;
             config.Mode = mode.SelectedIndex == 1 ? "Hold" : "Click";
             config.Style = Convert.ToString(style.SelectedItem);
             config.Opacity = opacity.Value;
@@ -839,15 +1017,26 @@ namespace OrbitWheelLite
             if (ConfigSaved != null) ConfigSaved(this, EventArgs.Empty);
         }
 
-        private string ModifierName(int n)
+        private void RecordHotkey(object sender, KeyEventArgs e)
         {
-            if (n == 1) return "Alt"; if (n == 4) return "Shift"; if (n == 8) return "Win";
-            if (n == 3) return "Ctrl+Alt"; if (n == 6) return "Ctrl+Shift"; return "Ctrl";
+            if (e.KeyCode == Keys.ControlKey || e.KeyCode == Keys.ShiftKey || e.KeyCode == Keys.Menu || e.KeyCode == Keys.LWin || e.KeyCode == Keys.RWin) return;
+            bool win = (Native.GetAsyncKeyState((int)Keys.LWin) & 0x8000) != 0 || (Native.GetAsyncKeyState((int)Keys.RWin) & 0x8000) != 0;
+            recordedModifiers = (e.Control ? Native.MOD_CONTROL : 0) | (e.Alt ? Native.MOD_ALT : 0) | (e.Shift ? Native.MOD_SHIFT : 0) | (win ? Native.MOD_WIN : 0);
+            recordedKey = (int)e.KeyCode;
+            hotkeyRecorder.Text = HotkeyText(recordedModifiers, recordedKey);
+            e.SuppressKeyPress = true;
+            AutoSave();
         }
-        private int ModifierValue(string n)
+
+        private string HotkeyText(int modifiers, int keyCode)
         {
-            if (n == "Alt") return 1; if (n == "Shift") return 4; if (n == "Win") return 8;
-            if (n == "Ctrl+Alt") return 3; if (n == "Ctrl+Shift") return 6; return 2;
+            List<string> parts = new List<string>();
+            if ((modifiers & Native.MOD_CONTROL) != 0) parts.Add("Ctrl");
+            if ((modifiers & Native.MOD_ALT) != 0) parts.Add("Alt");
+            if ((modifiers & Native.MOD_SHIFT) != 0) parts.Add("Shift");
+            if ((modifiers & Native.MOD_WIN) != 0) parts.Add("Win");
+            parts.Add(((Keys)keyCode).ToString());
+            return String.Join(" + ", parts.ToArray());
         }
 
         private Panel Box(string text, int x, int y, int w, int h)
@@ -881,8 +1070,8 @@ namespace OrbitWheelLite
         public static void Set(bool enabled)
         {
             using (RegistryKey k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) {
-                if (enabled) k.SetValue("OrbitWheel-Lite", "\"" + Application.ExecutablePath + "\"");
-                else k.DeleteValue("OrbitWheel-Lite", false);
+                if (enabled) k.SetValue("OrbitWheel Preview", "\"" + Application.ExecutablePath + "\"");
+                else k.DeleteValue("OrbitWheel Preview", false);
             }
         }
     }
@@ -899,7 +1088,7 @@ namespace OrbitWheelLite
         public OrbitContext()
         {
             config = ConfigStore.Load();
-            tray = new NotifyIcon { Icon = IconFactory.AppIcon(), Text = "OrbitWheel-Lite", Visible = true };
+            tray = new NotifyIcon { Icon = IconFactory.AppIcon(), Text = "OrbitWheel Preview", Visible = true };
             ContextMenuStrip menu = new ContextMenuStrip();
             menu.Items.Add("打开径向菜单", null, delegate { ShowWheel(); });
             menu.Items.Add("设置", null, delegate { ShowSettings(); });
@@ -918,7 +1107,7 @@ namespace OrbitWheelLite
         private void ApplyHotkey()
         {
             if (!hotkey.Set(config.Modifiers, config.KeyCode))
-                tray.ShowBalloonTip(3000, "OrbitWheel-Lite", "快捷键已被其他程序占用，请在设置中更换。", ToolTipIcon.Warning);
+                tray.ShowBalloonTip(3000, "OrbitWheel Preview", "快捷键已被其他程序占用，请在设置中更换。", ToolTipIcon.Warning);
         }
 
         private void ShowWheel()
@@ -951,7 +1140,7 @@ namespace OrbitWheelLite
             } catch (Exception ex) {
                 Directory.CreateDirectory(ConfigStore.Folder);
                 File.AppendAllText(Path.Combine(ConfigStore.Folder, "error.log"), DateTime.Now + " Settings: " + ex + Environment.NewLine);
-                MessageBox.Show("设置页面打开失败：\n" + ex.Message, "OrbitWheel-Lite");
+                MessageBox.Show("设置页面打开失败：\n" + ex.Message, "OrbitWheel Preview");
             }
         }
 
@@ -984,7 +1173,7 @@ namespace OrbitWheelLite
         static void Main()
         {
             bool created;
-            using (System.Threading.Mutex mutex = new System.Threading.Mutex(true, "OrbitWheel-Lite.SingleInstance", out created)) {
+            using (System.Threading.Mutex mutex = new System.Threading.Mutex(true, "OrbitWheel Preview.SingleInstance", out created)) {
                 if (!created) return;
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);

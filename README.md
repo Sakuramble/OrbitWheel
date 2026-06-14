@@ -38,6 +38,16 @@ OrbitWheel 是一款 Windows 径向快捷操作工具。当前发布版本为 **
 
 Lite 版使用单文件 WinForms 实现，无需额外安装运行库。`Fin` 为 Lite 系列最终版本标识。
 
+## Fin 后续开发分支
+
+`codex/next-ui` 分支用于探索 OrbitWheel 后续版本：
+
+- 圆环内只显示图标，不显示动作名称
+- Applications 虚拟目录应用选择器
+- 快捷方式图标解析到实际程序，移除快捷方式角标
+- 程序已运行时优先切换到现有窗口
+- 直接录制任意快捷键组合
+
 ## 许可证
 
 [MIT License](LICENSE)
