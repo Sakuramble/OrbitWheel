@@ -131,6 +131,11 @@ namespace OrbitWheelLite
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
         [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
+        [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr data);
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int count);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern int GetApplicationUserModelId(IntPtr process, ref uint length, System.Text.StringBuilder appId);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfo(string path, uint attributes, ref ShellFileInfo info, uint size, uint flags);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHParseDisplayName(string name, IntPtr bindingContext, out IntPtr pidl, uint attributesIn, out uint attributesOut);
         [DllImport("shell32.dll", EntryPoint = "SHGetFileInfoW", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfoPidl(IntPtr pidl, uint attributes, ref ShellFileInfo info, uint size, uint flags);
@@ -139,6 +144,7 @@ namespace OrbitWheelLite
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct ShellFileInfo { public IntPtr Icon; public int IconIndex; public uint Attributes; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName; }
         public delegate IntPtr KeyboardProc(int code, IntPtr wp, IntPtr lp);
+        public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr data);
     }
 
     class HotkeyWindow : NativeWindow, IDisposable
@@ -454,7 +460,7 @@ namespace OrbitWheelLite
         {
             try {
                 switch (a.Type) {
-                    case "App": ActivateOrStart(a.Target); break;
+                    case "App": ActivateOrStart(a.Target, a.Name); break;
                     case "Explorer": Start("explorer.exe", "shell:ThisPCFolder"); break;
                     case "Settings": showSettings(); break;
                     case "Lock": Native.LockWorkStation(); break;
@@ -482,23 +488,65 @@ namespace OrbitWheelLite
             Process.Start(info);
         }
 
-        private static void ActivateOrStart(string target)
+        private static void ActivateOrStart(string target, string displayName)
         {
             string executable = ShortcutResolver.ResolveTarget(target);
-            if (!String.IsNullOrEmpty(executable) && File.Exists(executable)) {
-                string processName = Path.GetFileNameWithoutExtension(executable);
-                foreach (Process process in Process.GetProcessesByName(processName)) {
-                    if (process.MainWindowHandle != IntPtr.Zero) {
-                        Native.ShowWindow(process.MainWindowHandle, 9);
-                        Native.SetForegroundWindow(process.MainWindowHandle);
-                        return;
-                    }
-                }
+            string appId = target.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase) ? target.Substring("shell:AppsFolder\\".Length) : "";
+            IntPtr existing = FindExistingWindow(executable, appId, displayName);
+            if (existing != IntPtr.Zero) {
+                Native.ShowWindow(existing, 9);
+                Native.SetForegroundWindow(existing);
+                return;
             }
             if (target.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
                 Start("explorer.exe", target);
             else
                 Start(target, "");
+        }
+
+        private static IntPtr FindExistingWindow(string executable, string appId, string displayName)
+        {
+            string expectedPath = File.Exists(executable) ? Path.GetFullPath(executable) : "";
+            string expectedProcess = expectedPath.Length > 0 ? Path.GetFileNameWithoutExtension(expectedPath) : "";
+            IntPtr found = IntPtr.Zero;
+            Native.EnumWindows(delegate(IntPtr hwnd, IntPtr data) {
+                if (!Native.IsWindowVisible(hwnd)) return true;
+                uint processId;
+                Native.GetWindowThreadProcessId(hwnd, out processId);
+                if (processId == 0) return true;
+                try {
+                    using (Process process = Process.GetProcessById((int)processId)) {
+                        bool matches = false;
+                        if (expectedPath.Length > 0) {
+                            try { matches = String.Equals(Path.GetFullPath(process.MainModule.FileName), expectedPath, StringComparison.OrdinalIgnoreCase); } catch { }
+                            if (!matches && expectedProcess.Length > 0) matches = String.Equals(process.ProcessName, expectedProcess, StringComparison.OrdinalIgnoreCase);
+                        }
+                        if (!matches && appId.Length > 0) {
+                            string runningAppId = GetAppUserModelId(process);
+                            matches = runningAppId.Length > 0 && (String.Equals(runningAppId, appId, StringComparison.OrdinalIgnoreCase) || runningAppId.StartsWith(appId + "!", StringComparison.OrdinalIgnoreCase));
+                        }
+                        if (!matches && appId.Length > 0 && !String.IsNullOrWhiteSpace(displayName)) {
+                            System.Text.StringBuilder title = new System.Text.StringBuilder(512);
+                            Native.GetWindowText(hwnd, title, title.Capacity);
+                            matches = title.Length > 0 && title.ToString().IndexOf(displayName, StringComparison.CurrentCultureIgnoreCase) >= 0;
+                        }
+                        if (matches) { found = hwnd; return false; }
+                    }
+                } catch { }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        private static string GetAppUserModelId(Process process)
+        {
+            try {
+                uint length = 0;
+                Native.GetApplicationUserModelId(process.Handle, ref length, null);
+                if (length == 0) return "";
+                System.Text.StringBuilder id = new System.Text.StringBuilder((int)length);
+                return Native.GetApplicationUserModelId(process.Handle, ref length, id) == 0 ? id.ToString() : "";
+            } catch { return ""; }
         }
     }
 
