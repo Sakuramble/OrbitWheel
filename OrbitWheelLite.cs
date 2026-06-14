@@ -10,12 +10,12 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-[assembly: AssemblyTitle("OrbitWheel Preview")]
-[assembly: AssemblyDescription("OrbitWheel Preview - 径向快捷操作中心")]
+[assembly: AssemblyTitle("OrbitWheel")]
+[assembly: AssemblyDescription("OrbitWheel 1.0 - 径向快捷操作中心")]
 [assembly: AssemblyCompany("OrbitWheel")]
 [assembly: AssemblyProduct("OrbitWheel")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
 
 namespace OrbitWheelLite
 {
@@ -219,7 +219,7 @@ namespace OrbitWheelLite
         public WheelForm(AppConfig c)
         {
             config = c;
-            Text = "OrbitWheel Preview Menu";
+            Text = "OrbitWheel Menu";
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
@@ -466,7 +466,7 @@ namespace OrbitWheelLite
                     case "Mute": MediaKey(0xAD); break;
                     case "Command": Start("cmd.exe", "/c " + a.Target); break;
                 }
-            } catch (Exception ex) { MessageBox.Show("无法执行“" + a.Name + "”\n" + ex.Message, "OrbitWheel Preview"); }
+            } catch (Exception ex) { MessageBox.Show("无法执行“" + a.Name + "”\n" + ex.Message, "OrbitWheel"); }
         }
 
         private static void MediaKey(byte key)
@@ -674,7 +674,7 @@ namespace OrbitWheelLite
     {
         private static readonly Dictionary<string, string> Names = new Dictionary<string, string> {
             {"None","无操作"}, {"App","打开程序"}, {"Command","执行命令"},
-            {"Explorer","打开资源管理器"}, {"Settings","打开 OrbitWheel Preview 设置"},
+            {"Explorer","打开资源管理器"}, {"Settings","打开 OrbitWheel 设置"},
             {"Lock","锁定电脑"}, {"Sleep","进入睡眠"}, {"Shutdown","关闭电脑"},
             {"Restart","重新启动"}, {"VolumeUp","增大音量"}, {"VolumeDown","减小音量"},
             {"Mute","静音 / 取消静音"}
@@ -907,7 +907,7 @@ namespace OrbitWheelLite
         public SettingsForm(AppConfig c)
         {
             config = c;
-            Text = "OrbitWheel Preview 设置";
+            Text = "OrbitWheel 设置";
             Icon = IconFactory.AppIcon();
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(1180, 760);
@@ -1040,10 +1040,10 @@ namespace OrbitWheelLite
             sections.Add(advanced);
 
             Panel about = Section();
-            GlassPanel aboutCard = Card("关于 OrbitWheel Preview", 0, 0, 858, 220);
+            GlassPanel aboutCard = Card("关于 OrbitWheel", 0, 0, 858, 220);
             aboutCard.Controls.Add(L("OrbitWheel", 28, 62, 400, 40, 22, true));
             Label aboutHint = L("鼠标中心的六等分径向快捷操作工具", 30, 108, 620, 28, 10, false); aboutHint.ForeColor = Color.FromArgb(145, 180, 220); aboutCard.Controls.Add(aboutHint);
-            aboutCard.Controls.Add(L("Preview · Lite Fin 后续预览分支", 30, 153, 500, 24, 9, false));
+            aboutCard.Controls.Add(L("OrbitWheel 1.0 · 全新 UI 与图标设计", 30, 153, 500, 24, 9, false));
             about.Controls.Add(aboutCard);
             sections.Add(about);
 
@@ -1256,8 +1256,8 @@ namespace OrbitWheelLite
         public static void Set(bool enabled)
         {
             using (RegistryKey k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) {
-                if (enabled) k.SetValue("OrbitWheel Preview", "\"" + Application.ExecutablePath + "\"");
-                else k.DeleteValue("OrbitWheel Preview", false);
+                if (enabled) k.SetValue("OrbitWheel", "\"" + Application.ExecutablePath + "\"");
+                else k.DeleteValue("OrbitWheel", false);
             }
         }
     }
@@ -1274,7 +1274,7 @@ namespace OrbitWheelLite
         public OrbitContext()
         {
             config = ConfigStore.Load();
-            tray = new NotifyIcon { Icon = IconFactory.AppIcon(), Text = "OrbitWheel Preview", Visible = true };
+            tray = new NotifyIcon { Icon = IconFactory.AppIcon(), Text = "OrbitWheel", Visible = true };
             ContextMenuStrip menu = new ContextMenuStrip();
             menu.Items.Add("打开径向菜单", null, delegate { ShowWheel(); });
             menu.Items.Add("设置", null, delegate { ShowSettings(); });
@@ -1293,7 +1293,7 @@ namespace OrbitWheelLite
         private void ApplyHotkey()
         {
             if (!hotkey.Set(config.Modifiers, config.KeyCode))
-                tray.ShowBalloonTip(3000, "OrbitWheel Preview", "快捷键已被其他程序占用，请在设置中更换。", ToolTipIcon.Warning);
+                tray.ShowBalloonTip(3000, "OrbitWheel", "快捷键已被其他程序占用，请在设置中更换。", ToolTipIcon.Warning);
         }
 
         private void ShowWheel()
@@ -1326,7 +1326,7 @@ namespace OrbitWheelLite
             } catch (Exception ex) {
                 Directory.CreateDirectory(ConfigStore.Folder);
                 File.AppendAllText(Path.Combine(ConfigStore.Folder, "error.log"), DateTime.Now + " Settings: " + ex + Environment.NewLine);
-                MessageBox.Show("设置页面打开失败：\n" + ex.Message, "OrbitWheel Preview");
+                MessageBox.Show("设置页面打开失败：\n" + ex.Message, "OrbitWheel");
             }
         }
 
@@ -1359,7 +1359,7 @@ namespace OrbitWheelLite
         static void Main()
         {
             bool created;
-            using (System.Threading.Mutex mutex = new System.Threading.Mutex(true, "OrbitWheel Preview.SingleInstance", out created)) {
+            using (System.Threading.Mutex mutex = new System.Threading.Mutex(true, "OrbitWheel.SingleInstance", out created)) {
                 if (!created) return;
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);

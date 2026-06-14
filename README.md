@@ -1,25 +1,33 @@
 # OrbitWheel
 
-OrbitWheel 是一款 Windows 径向快捷操作工具。当前发布版本为 **OrbitWheel-Lite Fin**，这是 Lite 系列的最终版本。
+OrbitWheel 是一款 Windows 径向快捷操作工具。按下自定义快捷键后，鼠标位置会出现六等分圆环，将鼠标移向目标扇区即可快速执行操作。
 
-按住自定义快捷键后，鼠标位置会出现六等分圆环。将鼠标移向目标扇区并松开快捷键，即可执行对应操作。
+## OrbitWheel 1.0
 
-## Lite 版功能
+OrbitWheel 1.0 采用全新设计的深色玻璃 UI 与整套系统操作图标：
 
-- 默认快捷键：`Ctrl + Space`
+![OrbitWheel 1.0 全新 UI](design/orbitwheel-1.0-ui.png)
+
+- 全新设置界面：左侧导航、玻璃卡片和分区设置页面
+- 全新纯图标径向菜单，环内不显示动作名称
+- 重新设计睡眠、音量、锁定、关机、重启等系统操作图标
+- Applications 应用选择器，可识别 Store/UWP 和桌面应用图标
+- 支持直接浏览普通程序文件
+- 已运行的桌面程序优先切换至现有窗口
+- 快捷键支持直接录制任意组合键
 - 默认使用“按住并松开执行”模式
-- 六扇区径向菜单，圆心固定在唤出时的鼠标位置
-- 鼠标滚轮切换页面，页面数量不限
-- 支持打开程序、执行命令、资源管理器、锁定、睡眠、关机、重启和音量控制
-- 支持液态玻璃、高斯模糊、亚克力三种视觉材质
+- 鼠标滚轮切换页面，支持无限页面
 - 设置修改后自动保存
-- 支持随 Windows 自动启动
-- 关闭窗口后常驻系统托盘
+- 支持随 Windows 启动并常驻系统托盘
+
+### 全新系统图标设计
+
+![OrbitWheel 1.0 系统图标](assets/system-icons-sheet.png)
 
 ## 使用
 
-1. 下载 Release 中的 `OrbitWheel-Lite-Fin.zip`。
-2. 解压后运行 `OrbitWheel-Lite.exe`。
+1. 下载 Release 中的 `OrbitWheel-1.0.zip`。
+2. 解压后运行 `OrbitWheel.exe`。
 3. 双击托盘图标打开设置。
 
 配置保存在 `%APPDATA%\OrbitWheel\config.json`。
@@ -32,21 +40,7 @@ OrbitWheel 是一款 Windows 径向快捷操作工具。当前发布版本为 **
 .\build.ps1
 ```
 
-构建结果位于 `dist\OrbitWheel-Lite.exe`。
-
-## Lite 版说明
-
-Lite 版使用单文件 WinForms 实现，无需额外安装运行库。`Fin` 为 Lite 系列最终版本标识。
-
-## Fin 后续开发分支
-
-`codex/next-ui` 分支用于探索 OrbitWheel 后续版本：
-
-- 圆环内只显示图标，不显示动作名称
-- Applications 虚拟目录应用选择器
-- 快捷方式图标解析到实际程序，移除快捷方式角标
-- 程序已运行时优先切换到现有窗口
-- 直接录制任意快捷键组合
+构建结果位于 `dist\OrbitWheel.exe`。
 
 ## 许可证
 
