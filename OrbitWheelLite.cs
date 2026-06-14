@@ -132,6 +132,10 @@ namespace OrbitWheelLite
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
         [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfo(string path, uint attributes, ref ShellFileInfo info, uint size, uint flags);
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHParseDisplayName(string name, IntPtr bindingContext, out IntPtr pidl, uint attributesIn, out uint attributesOut);
+        [DllImport("shell32.dll", EntryPoint = "SHGetFileInfoW", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfoPidl(IntPtr pidl, uint attributes, ref ShellFileInfo info, uint size, uint flags);
+        [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr icon);
+        [DllImport("ole32.dll")] public static extern void CoTaskMemFree(IntPtr pointer);
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct ShellFileInfo { public IntPtr Icon; public int IconIndex; public uint Attributes; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName; }
         public delegate IntPtr KeyboardProc(int code, IntPtr wp, IntPtr lp);
@@ -509,6 +513,8 @@ namespace OrbitWheelLite
 
     static class ActionIcons
     {
+        private static readonly Dictionary<string, Icon> Cache = new Dictionary<string, Icon>(StringComparer.OrdinalIgnoreCase);
+
         private static GraphicsPath Rounded(Rectangle r, int radius)
         {
             GraphicsPath p = new GraphicsPath();
@@ -590,12 +596,39 @@ namespace OrbitWheelLite
 
         public static Icon GetApplicationIcon(string target)
         {
+            if (String.IsNullOrWhiteSpace(target)) return null;
+            lock (Cache) {
+                Icon cached;
+                if (Cache.TryGetValue(target, out cached)) return cached == null ? null : (Icon)cached.Clone();
+            }
+            Icon loaded = LoadApplicationIcon(target);
+            lock (Cache) Cache[target] = loaded == null ? null : (Icon)loaded.Clone();
+            return loaded;
+        }
+
+        private static Icon LoadApplicationIcon(string target)
+        {
             try {
                 string iconTarget = ShortcutResolver.ResolveTarget(target);
                 if (File.Exists(iconTarget)) { using (Icon icon = Icon.ExtractAssociatedIcon(iconTarget)) return (Icon)icon.Clone(); }
+                IntPtr pidl;
+                uint attributes;
+                if (Native.SHParseDisplayName(target, IntPtr.Zero, out pidl, 0, out attributes) == 0 && pidl != IntPtr.Zero) {
+                    try {
+                        Native.ShellFileInfo pidlInfo = new Native.ShellFileInfo();
+                        IntPtr parsed = Native.SHGetFileInfoPidl(pidl, 0, ref pidlInfo, (uint)Marshal.SizeOf(pidlInfo), 0x100 | 0x008);
+                        if (parsed != IntPtr.Zero && pidlInfo.Icon != IntPtr.Zero) {
+                            try { using (Icon icon = Icon.FromHandle(pidlInfo.Icon)) return (Icon)icon.Clone(); }
+                            finally { Native.DestroyIcon(pidlInfo.Icon); }
+                        }
+                    } finally { Native.CoTaskMemFree(pidl); }
+                }
                 Native.ShellFileInfo info = new Native.ShellFileInfo();
                 IntPtr result = Native.SHGetFileInfo(target, 0, ref info, (uint)Marshal.SizeOf(info), 0x100);
-                if (result != IntPtr.Zero && info.Icon != IntPtr.Zero) { using (Icon icon = Icon.FromHandle(info.Icon)) return (Icon)icon.Clone(); }
+                if (result != IntPtr.Zero && info.Icon != IntPtr.Zero) {
+                    try { using (Icon icon = Icon.FromHandle(info.Icon)) return (Icon)icon.Clone(); }
+                    finally { Native.DestroyIcon(info.Icon); }
+                }
             } catch { }
             return null;
         }
@@ -688,19 +721,21 @@ namespace OrbitWheelLite
             Text = "选择应用 - Applications";
             Icon = IconFactory.AppIcon();
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(620, 650);
-            BackColor = Color.FromArgb(18, 23, 35);
+            ClientSize = new Size(680, 720);
+            BackColor = Color.FromArgb(7, 15, 30);
             ForeColor = Color.White;
             Font = new Font("Microsoft YaHei UI", 10f);
-            Label title = new Label { Text = "Applications", Left = 28, Top = 22, Width = 400, Height = 38, Font = new Font("Segoe UI", 22f, FontStyle.Bold), ForeColor = Color.White };
-            Label hint = new Label { Text = "所有已安装应用与快捷方式", Left = 30, Top = 62, Width = 400, Height = 24, ForeColor = Color.FromArgb(150, 180, 215) };
-            search = new TextBox { Left = 28, Top = 98, Width = 564, Height = 34, BackColor = Color.FromArgb(35, 44, 62), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Microsoft YaHei UI", 11f) };
-            list = new ListBox { Left = 28, Top = 148, Width = 564, Height = 430, BackColor = Color.FromArgb(27, 34, 49), ForeColor = Color.White, BorderStyle = BorderStyle.None, ItemHeight = 54, Font = new Font("Microsoft YaHei UI", 11f), DrawMode = DrawMode.OwnerDrawFixed };
-            Button browse = new Button { Text = "浏览文件…", Left = 28, Top = 594, Width = 150, Height = 40, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 58, 80), ForeColor = Color.White };
-            Button choose = new Button { Text = "选择应用", Left = 432, Top = 594, Width = 160, Height = 40, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(67, 126, 230), ForeColor = Color.White };
+            GlassPanel shell = new GlassPanel { Left = 18, Top = 18, Width = 644, Height = 684, Radius = 22, BorderColor = Color.FromArgb(82, 112, 160, 215) };
+            Controls.Add(shell);
+            Label title = new Label { Text = "选择应用", Left = 28, Top = 22, Width = 400, Height = 38, Font = new Font("Microsoft YaHei UI", 20f, FontStyle.Bold), ForeColor = Color.White, BackColor = Color.Transparent };
+            Label hint = new Label { Text = "Applications 中的所有应用，也可切换为普通文件选择", Left = 30, Top = 64, Width = 540, Height = 24, ForeColor = Color.FromArgb(150, 180, 215), BackColor = Color.Transparent };
+            search = new TextBox { Left = 28, Top = 104, Width = 588, Height = 36, BackColor = Color.FromArgb(18, 31, 51), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Microsoft YaHei UI", 11f) };
+            list = new ListBox { Left = 28, Top = 158, Width = 588, Height = 430, BackColor = Color.FromArgb(18, 29, 47), ForeColor = Color.White, BorderStyle = BorderStyle.None, ItemHeight = 58, Font = new Font("Microsoft YaHei UI", 11f), DrawMode = DrawMode.OwnerDrawFixed };
+            Button browse = new Button { Text = "浏览文件…", Left = 28, Top = 610, Width = 160, Height = 44, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(36, 55, 82), ForeColor = Color.White };
+            Button choose = new Button { Text = "选择应用", Left = 456, Top = 610, Width = 160, Height = 44, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(20, 105, 224), ForeColor = Color.White };
             browse.FlatAppearance.BorderSize = 0;
             choose.FlatAppearance.BorderSize = 0;
-            Controls.AddRange(new Control[] { title, hint, search, list, browse, choose });
+            shell.Controls.AddRange(new Control[] { title, hint, search, list, browse, choose });
             search.TextChanged += delegate { Filter(); };
             list.DoubleClick += delegate { Accept(); };
             list.DrawItem += DrawApplication;
@@ -742,11 +777,11 @@ namespace OrbitWheelLite
             if (e.Index < 0 || e.Index >= list.Items.Count) return;
             ApplicationChoice app = (ApplicationChoice)list.Items[e.Index];
             bool selected = (e.State & DrawItemState.Selected) != 0;
-            using (SolidBrush background = new SolidBrush(selected ? Color.FromArgb(56, 88, 138) : Color.FromArgb(27, 34, 49))) e.Graphics.FillRectangle(background, e.Bounds);
+            using (SolidBrush background = new SolidBrush(selected ? Color.FromArgb(35, 100, 185) : Color.FromArgb(18, 29, 47))) e.Graphics.FillRectangle(background, e.Bounds);
             using (Icon icon = ActionIcons.GetApplicationIcon(app.Target)) {
-                if (icon != null) e.Graphics.DrawIcon(icon, new Rectangle(e.Bounds.X + 14, e.Bounds.Y + 9, 36, 36));
+                if (icon != null) e.Graphics.DrawIcon(icon, new Rectangle(e.Bounds.X + 14, e.Bounds.Y + 9, 40, 40));
                 else {
-                    Rectangle fallback = new Rectangle(e.Bounds.X + 14, e.Bounds.Y + 9, 36, 36);
+                    Rectangle fallback = new Rectangle(e.Bounds.X + 14, e.Bounds.Y + 9, 40, 40);
                     using (SolidBrush fb = new SolidBrush(Color.FromArgb(70, 122, 220))) e.Graphics.FillEllipse(fb, fallback);
                     using (Font ff = new Font("Segoe UI", 12f, FontStyle.Bold))
                     using (SolidBrush ft = new SolidBrush(Color.White)) {
@@ -756,8 +791,59 @@ namespace OrbitWheelLite
                     }
                 }
             }
-            using (SolidBrush text = new SolidBrush(Color.White)) e.Graphics.DrawString(app.Name, Font, text, e.Bounds.X + 64, e.Bounds.Y + 16);
-            using (Pen line = new Pen(Color.FromArgb(36, 52, 72))) e.Graphics.DrawLine(line, e.Bounds.X + 64, e.Bounds.Bottom - 1, e.Bounds.Right - 12, e.Bounds.Bottom - 1);
+            using (SolidBrush text = new SolidBrush(Color.White)) e.Graphics.DrawString(app.Name, Font, text, e.Bounds.X + 70, e.Bounds.Y + 18);
+            using (Pen line = new Pen(Color.FromArgb(38, 58, 83))) e.Graphics.DrawLine(line, e.Bounds.X + 70, e.Bounds.Bottom - 1, e.Bounds.Right - 12, e.Bounds.Bottom - 1);
+        }
+    }
+
+    class GlassPanel : Panel
+    {
+        public int Radius = 18;
+        public Color BorderColor = Color.FromArgb(55, 105, 160, 220);
+
+        public GlassPanel()
+        {
+            DoubleBuffered = true;
+            BackColor = Color.FromArgb(26, 38, 58);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            using (GraphicsPath path = RoundedPath(ClientRectangle, Radius)) Region = new Region(path);
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle r = new Rectangle(0, 0, Width - 1, Height - 1);
+            using (GraphicsPath path = RoundedPath(r, Radius))
+            using (LinearGradientBrush fill = new LinearGradientBrush(r, Color.FromArgb(36, 49, 72), Color.FromArgb(22, 31, 48), 120f)) {
+                e.Graphics.FillPath(fill, path);
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle r = new Rectangle(0, 0, Width - 1, Height - 1);
+            using (GraphicsPath path = RoundedPath(r, Radius))
+            using (Pen border = new Pen(BorderColor, 1f)) {
+                e.Graphics.DrawPath(border, path);
+            }
+            base.OnPaint(e);
+        }
+
+        private static GraphicsPath RoundedPath(Rectangle r, int radius)
+        {
+            GraphicsPath path = new GraphicsPath();
+            int d = Math.Max(2, radius * 2);
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
         }
     }
 
@@ -773,6 +859,9 @@ namespace OrbitWheelLite
         private int recordedKey;
         private CheckBox startup;
         private Label effectDescription;
+        private Panel contentHost;
+        private readonly List<Button> navigation = new List<Button>();
+        private readonly List<Panel> sections = new List<Panel>();
         private bool loadingGrid;
         private bool choosingApp;
         private bool showingPage;
@@ -785,9 +874,9 @@ namespace OrbitWheelLite
             Text = "OrbitWheel Preview 设置";
             Icon = IconFactory.AppIcon();
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(980, 650);
-            MinimumSize = new Size(900, 600);
-            BackColor = Color.FromArgb(14, 19, 30);
+            ClientSize = new Size(1180, 760);
+            MinimumSize = new Size(1080, 700);
+            BackColor = Color.FromArgb(7, 15, 30);
             ForeColor = Color.White;
             Font = new Font("Microsoft YaHei UI", 9.5f);
             initializing = true;
@@ -799,21 +888,57 @@ namespace OrbitWheelLite
 
         private void Build()
         {
-            Label title = L("OrbitWheel", 30, 22, 300, 40, 22, true);
-            Controls.Add(title);
-            Label subtitle = L("把常用操作放在鼠标身边", 32, 63, 330, 24, 9, false); subtitle.ForeColor = Color.FromArgb(135, 166, 205); Controls.Add(subtitle);
+            GlassPanel shell = new GlassPanel { Left = 18, Top = 18, Width = 1144, Height = 724, Radius = 22, BorderColor = Color.FromArgb(85, 112, 161, 220) };
+            Controls.Add(shell);
+            Label appMark = L("◉", 26, 20, 44, 44, 24, false); appMark.ForeColor = Color.FromArgb(68, 178, 255); shell.Controls.Add(appMark);
+            Label title = L("设置", 78, 24, 260, 38, 20, true); shell.Controls.Add(title);
+            Panel rule = new Panel { Left = 24, Top = 76, Width = 1096, Height = 1, BackColor = Color.FromArgb(55, 112, 145, 185) }; shell.Controls.Add(rule);
 
-            Panel pageBox = Box("页面与六个扇区", 26, 106, 674, 500);
-            pages = new ListBox { Left = 18, Top = 48, Width = 150, Height = 372, BackColor = Color.FromArgb(24,32,48), ForeColor = Color.White, BorderStyle = BorderStyle.None, ItemHeight = 34 };
+            GlassPanel sidebar = new GlassPanel { Left = 22, Top = 96, Width = 220, Height = 604, Radius = 18, BorderColor = Color.FromArgb(42, 93, 130, 180) };
+            shell.Controls.Add(sidebar);
+            string[] navText = { "⌂   常规", "▦   页面与动作", "◉   外观效果", "⌨   快捷键", "⚙   高级", "●   关于" };
+            for (int i = 0; i < navText.Length; i++) {
+                Button nav = B(navText[i], 14, 18 + i * 58, 192, 46);
+                nav.TextAlign = ContentAlignment.MiddleLeft;
+                nav.Padding = new Padding(18, 0, 0, 0);
+                int index = i;
+                nav.Click += delegate { ShowSection(index); };
+                sidebar.Controls.Add(nav);
+                navigation.Add(nav);
+            }
+            Label auto = L("所有更改都会自动保存", 24, 552, 180, 24, 8, false); auto.ForeColor = Color.FromArgb(130, 165, 205); sidebar.Controls.Add(auto);
+
+            contentHost = new Panel { Left = 262, Top = 96, Width = 858, Height = 604, BackColor = Color.Transparent };
+            shell.Controls.Add(contentHost);
+
+            Panel general = Section();
+            GlassPanel startupCard = Card("启动与托盘", 0, 0, 858, 132);
+            startup = new CheckBox { Left = 28, Top = 57, Width = 250, Height = 30, Text = "随 Windows 自动启动", ForeColor = Color.White, BackColor = Color.Transparent, Font = new Font("Microsoft YaHei UI", 10.5f) };
+            startupCard.Controls.Add(startup);
+            Label trayHint = L("关闭设置窗口后，OrbitWheel 仍会留在系统托盘", 28, 91, 520, 22, 8.5f, false); trayHint.ForeColor = Color.FromArgb(145, 174, 210); startupCard.Controls.Add(trayHint);
+            general.Controls.Add(startupCard);
+            GlassPanel triggerCard = Card("触发模式", 0, 148, 858, 154);
+            mode = C(28, 60, 390); mode.Items.AddRange(new object[] { "点击模式", "按住并松开执行" }); triggerCard.Controls.Add(mode);
+            Label triggerHint = L("默认按住快捷键，移动到目标后松开执行", 28, 102, 530, 22, 8.5f, false); triggerHint.ForeColor = Color.FromArgb(145, 174, 210); triggerCard.Controls.Add(triggerHint);
+            general.Controls.Add(triggerCard);
+            GlassPanel pageHintCard = Card("页面切换", 0, 318, 858, 132);
+            pageHintCard.Controls.Add(L("滚动鼠标滚轮切换页面", 28, 60, 330, 26, 10.5f, false));
+            Label dots = L("●  ●  ●", 690, 61, 120, 24, 11, false); dots.ForeColor = Color.FromArgb(38, 157, 255); pageHintCard.Controls.Add(dots);
+            general.Controls.Add(pageHintCard);
+            sections.Add(general);
+
+            Panel pageSection = Section();
+            GlassPanel pageBox = Card("页面与六个扇区", 0, 0, 858, 586);
+            pages = new ListBox { Left = 22, Top = 58, Width = 176, Height = 438, BackColor = Color.FromArgb(20,31,49), ForeColor = Color.White, BorderStyle = BorderStyle.None, ItemHeight = 38, Font = new Font("Microsoft YaHei UI", 10f) };
             pages.SelectedIndexChanged += delegate { ShowPage(); };
             pageBox.Controls.Add(pages);
-            Button add = B("＋", 18, 438, 70, 40); add.Font = new Font("Segoe UI", 17f); add.Click += delegate { AddPage(); }; pageBox.Controls.Add(add);
-            Button del = B("−", 98, 438, 70, 40); del.Font = new Font("Segoe UI", 17f); del.BackColor = Color.FromArgb(62, 42, 57); del.Click += delegate { DeletePage(); }; pageBox.Controls.Add(del);
+            Button add = B("＋  添加页面", 22, 512, 112, 42); add.Click += delegate { AddPage(); }; pageBox.Controls.Add(add);
+            Button del = B("−", 144, 512, 54, 42); del.BackColor = Color.FromArgb(67, 42, 58); del.Click += delegate { DeletePage(); }; pageBox.Controls.Add(del);
             ToolTip pageTips = new ToolTip();
             pageTips.SetToolTip(add, "添加新页面");
             pageTips.SetToolTip(del, "删除当前页面");
 
-            pageName = new TextBox { Left = 184, Top = 48, Width = 466, Height = 30, BackColor = Color.FromArgb(31,42,61), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            pageName = new TextBox { Left = 220, Top = 58, Width = 608, Height = 32, BackColor = Color.FromArgb(22,37,59), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Microsoft YaHei UI", 10.5f) };
             pageName.TextChanged += delegate {
                 if (!showingPage && pages.SelectedIndex >= 0) {
                     config.Pages[pages.SelectedIndex].Name = pageName.Text;
@@ -824,7 +949,7 @@ namespace OrbitWheelLite
             };
             pageBox.Controls.Add(pageName);
 
-            grid = new DataGridView { Left = 184, Top = 92, Width = 466, Height = 340, BackgroundColor = Color.FromArgb(24,32,48), ForeColor = Color.White, GridColor = Color.FromArgb(42,55,77), BorderStyle = BorderStyle.None, RowHeadersVisible = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal, ColumnHeadersHeight = 38, RowTemplate = { Height = 42 } };
+            grid = new DataGridView { Left = 220, Top = 106, Width = 608, Height = 390, BackgroundColor = Color.FromArgb(20,31,49), ForeColor = Color.White, GridColor = Color.FromArgb(42,65,94), BorderStyle = BorderStyle.None, RowHeadersVisible = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal, ColumnHeadersHeight = 42, RowTemplate = { Height = 48 } };
             grid.EnableHeadersVisualStyles = false;
             grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(35,47,68);
             grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
@@ -844,26 +969,51 @@ namespace OrbitWheelLite
             grid.CellValueChanged += delegate { HandleCellChange(); };
             grid.SelectionChanged += delegate { UpdateActionEditor(); };
             pageBox.Controls.Add(grid);
-            Label appHint = L("选择“打开程序”时将打开 Applications 应用选择器。", 184, 450, 446, 25, 8, false); appHint.ForeColor = Color.FromArgb(125, 156, 195); pageBox.Controls.Add(appHint);
-            Controls.Add(pageBox);
+            Label appHint = L("选择“打开程序”后，可从 Applications 或普通文件窗口选择。", 220, 520, 590, 25, 8, false); appHint.ForeColor = Color.FromArgb(125, 166, 210); pageBox.Controls.Add(appHint);
+            pageSection.Controls.Add(pageBox);
+            sections.Add(pageSection);
 
-            Panel prefs = Box("行为与外观", 720, 106, 234, 500);
-            prefs.Controls.Add(L("快捷键", 16, 43, 180, 22, 9, false));
-            hotkeyRecorder = new TextBox { Left = 16, Top = 66, Width = 186, Height = 31, ReadOnly = true, BackColor = Color.FromArgb(36, 47, 68), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, TextAlign = HorizontalAlignment.Center, Font = new Font("Segoe UI", 10f) };
+            Panel appearance = Section();
+            GlassPanel styleCard = Card("视觉效果", 0, 0, 858, 190);
+            styleCard.Controls.Add(L("效果样式", 28, 62, 110, 24, 10, false));
+            style = C(142, 58, 310); style.Items.AddRange(new object[] { "液态玻璃", "高斯模糊", "亚克力" }); styleCard.Controls.Add(style);
+            effectDescription = L("", 28, 112, 700, 38, 9, false); effectDescription.ForeColor = Color.FromArgb(150, 188, 225); styleCard.Controls.Add(effectDescription);
+            appearance.Controls.Add(styleCard);
+            GlassPanel visualInfo = Card("圆环视觉说明", 0, 206, 858, 174);
+            visualInfo.Controls.Add(L("视觉效果仅应用于圆环本身，不影响整个屏幕。", 28, 62, 650, 26, 10, false));
+            Label material = L("液态玻璃强调折射高光；高斯模糊强调背景虚化；亚克力带有磨砂颗粒。", 28, 100, 740, 42, 9, false); material.ForeColor = Color.FromArgb(145, 174, 210); visualInfo.Controls.Add(material);
+            appearance.Controls.Add(visualInfo);
+            sections.Add(appearance);
+
+            Panel hotkeySection = Section();
+            GlassPanel hotkeyCard = Card("快捷键", 0, 0, 858, 190);
+            hotkeyRecorder = new TextBox { Left = 28, Top = 64, Width = 520, Height = 38, ReadOnly = true, BackColor = Color.FromArgb(15, 29, 48), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, TextAlign = HorizontalAlignment.Center, Font = new Font("Segoe UI", 12f) };
             hotkeyRecorder.KeyDown += RecordHotkey;
             hotkeyRecorder.Enter += delegate { hotkeyRecorder.Text = "请按下新的快捷键…"; };
-            prefs.Controls.Add(hotkeyRecorder);
-            prefs.Controls.Add(L("触发模式", 16, 105, 180, 22, 9, false));
-            mode = C(16, 128, 186); mode.Items.AddRange(new object[] { "点击模式", "按住并松开执行" }); prefs.Controls.Add(mode);
-            prefs.Controls.Add(L("视觉材质", 16, 168, 180, 22, 9, false));
-            style = C(16, 191, 186); style.Items.AddRange(new object[] { "液态玻璃", "高斯模糊", "亚克力" }); prefs.Controls.Add(style);
-            effectDescription = L("", 16, 224, 190, 38, 8, false); effectDescription.ForeColor = Color.FromArgb(160, 185, 215); prefs.Controls.Add(effectDescription);
-            style.SelectedIndexChanged += delegate { UpdateEffectDescription(); };
-            startup = new CheckBox { Left = 16, Top = 284, Width = 190, Height = 28, Text = "随 Windows 自动启动", ForeColor = Color.White }; prefs.Controls.Add(startup);
-            prefs.Controls.Add(L("滚轮切换页面 · Esc 关闭", 16, 328, 190, 25, 8, false));
-            prefs.Controls.Add(L("所有更改都会自动保存", 16, 368, 190, 25, 8, false));
-            Controls.Add(prefs);
+            hotkeyCard.Controls.Add(hotkeyRecorder);
+            Button record = B("录制快捷键", 570, 62, 180, 42); record.Click += delegate { hotkeyRecorder.Focus(); hotkeyRecorder.Text = "请按下新的快捷键…"; }; hotkeyCard.Controls.Add(record);
+            Label hotkeyHint = L("点击“录制快捷键”并按下任意组合键。", 28, 122, 620, 24, 9, false); hotkeyHint.ForeColor = Color.FromArgb(145, 174, 210); hotkeyCard.Controls.Add(hotkeyHint);
+            hotkeySection.Controls.Add(hotkeyCard);
+            sections.Add(hotkeySection);
 
+            Panel advanced = Section();
+            GlassPanel advancedCard = Card("高级", 0, 0, 858, 190);
+            advancedCard.Controls.Add(L("圆环中心始终以打开瞬间的鼠标位置为准。", 28, 62, 700, 26, 10, false));
+            Label advancedHint = L("点击模式下再次按快捷键不会重复打开圆环；按 Esc 可关闭。", 28, 103, 720, 28, 9, false); advancedHint.ForeColor = Color.FromArgb(145,174,210); advancedCard.Controls.Add(advancedHint);
+            advanced.Controls.Add(advancedCard);
+            sections.Add(advanced);
+
+            Panel about = Section();
+            GlassPanel aboutCard = Card("关于 OrbitWheel Preview", 0, 0, 858, 220);
+            aboutCard.Controls.Add(L("OrbitWheel", 28, 62, 400, 40, 22, true));
+            Label aboutHint = L("鼠标中心的六等分径向快捷操作工具", 30, 108, 620, 28, 10, false); aboutHint.ForeColor = Color.FromArgb(145, 180, 220); aboutCard.Controls.Add(aboutHint);
+            aboutCard.Controls.Add(L("Preview · Lite Fin 后续预览分支", 30, 153, 500, 24, 9, false));
+            about.Controls.Add(aboutCard);
+            sections.Add(about);
+
+            foreach (Panel section in sections) contentHost.Controls.Add(section);
+
+            style.SelectedIndexChanged += delegate { UpdateEffectDescription(); };
             mode.SelectedIndexChanged += delegate { AutoSave(); };
             style.SelectedIndexChanged += delegate { AutoSave(); };
             startup.CheckedChanged += delegate { AutoSave(); };
@@ -875,6 +1025,7 @@ namespace OrbitWheelLite
             style.SelectedItem = config.Style;
             UpdateEffectDescription();
             startup.Checked = config.StartWithWindows;
+            ShowSection(0);
         }
 
         private void LoadPageList()
@@ -1011,6 +1162,32 @@ namespace OrbitWheelLite
             return String.Join(" + ", parts.ToArray());
         }
 
+        private Panel Section()
+        {
+            Panel section = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Visible = false };
+            return section;
+        }
+
+        private GlassPanel Card(string text, int x, int y, int w, int h)
+        {
+            GlassPanel card = new GlassPanel { Left = x, Top = y, Width = w, Height = h, Radius = 17, BorderColor = Color.FromArgb(54, 94, 132, 184) };
+            Label heading = L(text, 28, 20, w - 56, 30, 12, true);
+            heading.ForeColor = Color.FromArgb(232, 242, 255);
+            card.Controls.Add(heading);
+            return card;
+        }
+
+        private void ShowSection(int index)
+        {
+            if (index < 0 || index >= sections.Count) return;
+            for (int i = 0; i < sections.Count; i++) {
+                sections[i].Visible = i == index;
+                navigation[i].BackColor = i == index ? Color.FromArgb(20, 105, 224) : Color.FromArgb(31, 45, 66);
+                navigation[i].ForeColor = i == index ? Color.White : Color.FromArgb(210, 225, 245);
+            }
+            sections[index].BringToFront();
+        }
+
         private Panel Box(string text, int x, int y, int w, int h)
         {
             Panel box = new Panel { Left = x, Top = y, Width = w, Height = h, BackColor = Color.FromArgb(27,33,47), Padding = new Padding(12) };
@@ -1021,19 +1198,20 @@ namespace OrbitWheelLite
         }
         private Label L(string text, int x, int y, int w, int h, float size, bool bold)
         {
-            return new Label { Text = text, Left = x, Top = y, Width = w, Height = h, ForeColor = Color.White, Font = new Font("Microsoft YaHei UI", size, bold ? FontStyle.Bold : FontStyle.Regular) };
+            return new Label { Text = text, Left = x, Top = y, Width = w, Height = h, ForeColor = Color.White, BackColor = Color.Transparent, Font = new Font("Microsoft YaHei UI", size, bold ? FontStyle.Bold : FontStyle.Regular) };
         }
         private Button B(string text, int x, int y, int w, int h)
         {
-            Button b = new Button { Text = text, Left = x, Top = y, Width = w, Height = h, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(52,68,94), Cursor = Cursors.Hand };
-            b.FlatAppearance.BorderSize = 0;
-            b.FlatAppearance.MouseOverBackColor = Color.FromArgb(68, 92, 132);
-            b.FlatAppearance.MouseDownBackColor = Color.FromArgb(42, 64, 104);
+            Button b = new Button { Text = text, Left = x, Top = y, Width = w, Height = h, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(31,45,66), Cursor = Cursors.Hand, Font = new Font("Microsoft YaHei UI", 9.5f) };
+            b.FlatAppearance.BorderColor = Color.FromArgb(68, 105, 150);
+            b.FlatAppearance.BorderSize = 1;
+            b.FlatAppearance.MouseOverBackColor = Color.FromArgb(35, 82, 145);
+            b.FlatAppearance.MouseDownBackColor = Color.FromArgb(20, 105, 224);
             return b;
         }
         private ComboBox C(int x, int y, int w)
         {
-            return new ComboBox { Left = x, Top = y, Width = w, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Color.FromArgb(40,48,66), ForeColor = Color.White };
+            return new ComboBox { Left = x, Top = y, Width = w, Height = 36, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Color.FromArgb(20,34,55), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Microsoft YaHei UI", 10.5f) };
         }
     }
 
