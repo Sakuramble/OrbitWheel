@@ -297,8 +297,13 @@ namespace OrbitWheelLite
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             e.Graphics.Clear(Color.FromArgb(1, 2, 3));
             if (backdrop != null) {
-                using (TextureBrush texture = new TextureBrush(backdrop))
-                    e.Graphics.FillEllipse(texture, center.X - Outer + 2, center.Y - Outer + 2, (Outer - 2) * 2, (Outer - 2) * 2);
+                GraphicsState state = e.Graphics.Save();
+                using (GraphicsPath clip = new GraphicsPath()) {
+                    clip.AddEllipse(center.X - Outer + 2, center.Y - Outer + 2, (Outer - 2) * 2, (Outer - 2) * 2);
+                    e.Graphics.SetClip(clip);
+                    e.Graphics.DrawImageUnscaled(backdrop, Point.Empty);
+                }
+                e.Graphics.Restore(state);
             }
         }
 
@@ -514,6 +519,12 @@ namespace OrbitWheelLite
     static class ActionIcons
     {
         private static readonly Dictionary<string, Icon> Cache = new Dictionary<string, Icon>(StringComparer.OrdinalIgnoreCase);
+        private static Bitmap systemIconSheet;
+        private static readonly Dictionary<string, Point> SystemIconCells = new Dictionary<string, Point> {
+            {"Explorer", new Point(0, 0)}, {"Settings", new Point(1, 0)}, {"Lock", new Point(2, 0)}, {"Sleep", new Point(3, 0)},
+            {"Shutdown", new Point(0, 1)}, {"Restart", new Point(1, 1)}, {"VolumeUp", new Point(2, 1)}, {"VolumeDown", new Point(3, 1)},
+            {"Mute", new Point(0, 2)}, {"Command", new Point(1, 2)}, {"None", new Point(2, 2)}
+        };
 
         private static GraphicsPath Rounded(Rectangle r, int radius)
         {
@@ -529,6 +540,7 @@ namespace OrbitWheelLite
             if (a.Type == "App") {
                 using (Icon appIcon = GetApplicationIcon(a.Target)) if (appIcon != null) { g.DrawIcon(appIcon, r); return; }
             }
+            if (DrawGeneratedSystemIcon(g, a.Type, r)) return;
             Color fg = Color.FromArgb(245, 245, 250, 255);
             Rectangle tile = new Rectangle(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6);
             using (GraphicsPath tilePath = Rounded(tile, 13)) {
@@ -592,6 +604,28 @@ namespace OrbitWheelLite
                         break;
                 }
             }
+        }
+
+        private static bool DrawGeneratedSystemIcon(Graphics g, string type, Rectangle destination)
+        {
+            Point cell;
+            if (!SystemIconCells.TryGetValue(type, out cell)) return false;
+            try {
+                if (systemIconSheet == null) {
+                    using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("OrbitWheel.SystemIcons"))
+                        if (stream != null) systemIconSheet = new Bitmap(stream);
+                }
+                if (systemIconSheet == null) return false;
+                int cellWidth = systemIconSheet.Width / 4;
+                int cellHeight = systemIconSheet.Height / 3;
+                int insetX = 58, insetY = 54;
+                Rectangle source = new Rectangle(cell.X * cellWidth + insetX, cell.Y * cellHeight + insetY, cellWidth - insetX * 2, cellHeight - insetY * 2);
+                InterpolationMode previous = g.InterpolationMode;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.DrawImage(systemIconSheet, destination, source, GraphicsUnit.Pixel);
+                g.InterpolationMode = previous;
+                return true;
+            } catch { return false; }
         }
 
         public static Icon GetApplicationIcon(string target)

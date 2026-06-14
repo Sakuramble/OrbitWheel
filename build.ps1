@@ -11,6 +11,7 @@ $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
     /reference:System.Drawing.dll `
     /reference:System.Windows.Forms.dll `
     /reference:System.Web.Extensions.dll `
+    /resource:"$root\assets\system-icons-sheet.png",OrbitWheel.SystemIcons `
     "$root\OrbitWheelLite.cs"
 
 if ($LASTEXITCODE -ne 0) { throw "Build failed: $LASTEXITCODE" }
