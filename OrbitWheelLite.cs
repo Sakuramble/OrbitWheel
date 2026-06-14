@@ -11,11 +11,11 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("OrbitWheel")]
-[assembly: AssemblyDescription("OrbitWheel 1.0 - 径向快捷操作中心")]
+[assembly: AssemblyDescription("OrbitWheel 1.0.1 - 径向快捷操作中心")]
 [assembly: AssemblyCompany("OrbitWheel")]
 [assembly: AssemblyProduct("OrbitWheel")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 namespace OrbitWheelLite
 {
@@ -1091,7 +1091,7 @@ namespace OrbitWheelLite
             GlassPanel aboutCard = Card("关于 OrbitWheel", 0, 0, 858, 220);
             aboutCard.Controls.Add(L("OrbitWheel", 28, 62, 400, 40, 22, true));
             Label aboutHint = L("鼠标中心的六等分径向快捷操作工具", 30, 108, 620, 28, 10, false); aboutHint.ForeColor = Color.FromArgb(145, 180, 220); aboutCard.Controls.Add(aboutHint);
-            aboutCard.Controls.Add(L("OrbitWheel 1.0 · 全新 UI 与图标设计", 30, 153, 500, 24, 9, false));
+            aboutCard.Controls.Add(L("OrbitWheel 1.0.1 · 已运行软件智能切换", 30, 153, 500, 24, 9, false));
             about.Controls.Add(aboutCard);
             sections.Add(about);
 
