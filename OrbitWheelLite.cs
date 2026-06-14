@@ -11,11 +11,11 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("OrbitWheel")]
-[assembly: AssemblyDescription("OrbitWheel 1.0.1 - 径向快捷操作中心")]
+[assembly: AssemblyDescription("OrbitWheel 1.0.2 - 径向快捷操作中心")]
 [assembly: AssemblyCompany("OrbitWheel")]
 [assembly: AssemblyProduct("OrbitWheel")]
-[assembly: AssemblyVersion("1.0.1.0")]
-[assembly: AssemblyFileVersion("1.0.1.0")]
+[assembly: AssemblyVersion("1.0.2.0")]
+[assembly: AssemblyFileVersion("1.0.2.0")]
 
 namespace OrbitWheelLite
 {
@@ -130,11 +130,15 @@ namespace OrbitWheelLite
         [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+        [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hwnd, int command);
+        [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
         [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
         [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr data);
         [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int count);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder text, int count);
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out WindowRect rect);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern int GetApplicationUserModelId(IntPtr process, ref uint length, System.Text.StringBuilder appId);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfo(string path, uint attributes, ref ShellFileInfo info, uint size, uint flags);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHParseDisplayName(string name, IntPtr bindingContext, out IntPtr pidl, uint attributesIn, out uint attributesOut);
@@ -143,6 +147,8 @@ namespace OrbitWheelLite
         [DllImport("ole32.dll")] public static extern void CoTaskMemFree(IntPtr pointer);
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct ShellFileInfo { public IntPtr Icon; public int IconIndex; public uint Attributes; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName; }
+        [StructLayout(LayoutKind.Sequential)]
+        public struct WindowRect { public int Left; public int Top; public int Right; public int Bottom; }
         public delegate IntPtr KeyboardProc(int code, IntPtr wp, IntPtr lp);
         public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr data);
     }
@@ -494,7 +500,10 @@ namespace OrbitWheelLite
             string appId = target.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase) ? target.Substring("shell:AppsFolder\\".Length) : "";
             IntPtr existing = FindExistingWindow(executable, appId, displayName);
             if (existing != IntPtr.Zero) {
+                Native.ShowWindowAsync(existing, 9);
                 Native.ShowWindow(existing, 9);
+                Native.ShowWindow(existing, 5);
+                Native.BringWindowToTop(existing);
                 Native.SetForegroundWindow(existing);
                 return;
             }
@@ -509,8 +518,8 @@ namespace OrbitWheelLite
             string expectedPath = File.Exists(executable) ? Path.GetFullPath(executable) : "";
             string expectedProcess = expectedPath.Length > 0 ? Path.GetFileNameWithoutExtension(expectedPath) : "";
             IntPtr found = IntPtr.Zero;
+            int bestScore = Int32.MinValue;
             Native.EnumWindows(delegate(IntPtr hwnd, IntPtr data) {
-                if (!Native.IsWindowVisible(hwnd)) return true;
                 uint processId;
                 Native.GetWindowThreadProcessId(hwnd, out processId);
                 if (processId == 0) return true;
@@ -530,12 +539,43 @@ namespace OrbitWheelLite
                             Native.GetWindowText(hwnd, title, title.Capacity);
                             matches = title.Length > 0 && title.ToString().IndexOf(displayName, StringComparison.CurrentCultureIgnoreCase) >= 0;
                         }
-                        if (matches) { found = hwnd; return false; }
+                        if (matches) {
+                            int score = ScoreApplicationWindow(hwnd, displayName);
+                            if (score > bestScore) { bestScore = score; found = hwnd; }
+                        }
                     }
                 } catch { }
                 return true;
             }, IntPtr.Zero);
             return found;
+        }
+
+        private static int ScoreApplicationWindow(IntPtr hwnd, string displayName)
+        {
+            System.Text.StringBuilder title = new System.Text.StringBuilder(512);
+            System.Text.StringBuilder className = new System.Text.StringBuilder(256);
+            Native.GetWindowText(hwnd, title, title.Capacity);
+            Native.GetClassName(hwnd, className, className.Capacity);
+            string windowTitle = title.ToString();
+            string windowClass = className.ToString();
+            if (windowClass.IndexOf("TrayIcon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                windowClass.IndexOf("MessageWindow", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                windowClass.IndexOf("SystemMessage", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                windowClass.IndexOf("IME", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                windowClass.IndexOf("SoPY", StringComparison.OrdinalIgnoreCase) >= 0) return Int32.MinValue;
+            Native.WindowRect rect;
+            Native.GetWindowRect(hwnd, out rect);
+            int width = Math.Max(0, rect.Right - rect.Left);
+            int height = Math.Max(0, rect.Bottom - rect.Top);
+            if (width < 200 || height < 150) return Int32.MinValue;
+            int score = Math.Min(2000, (width * height) / 500);
+            if (Native.IsWindowVisible(hwnd)) score += 10000;
+            if (!String.IsNullOrWhiteSpace(windowTitle)) score += 1200;
+            if (!String.IsNullOrWhiteSpace(displayName) && String.Equals(windowTitle, displayName, StringComparison.CurrentCultureIgnoreCase)) score += 6000;
+            else if (!String.IsNullOrWhiteSpace(displayName) && windowTitle.IndexOf(displayName, StringComparison.CurrentCultureIgnoreCase) >= 0) score += 3000;
+            if (windowClass.IndexOf("QWindow", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                windowClass.IndexOf("Chrome_WidgetWin_1", StringComparison.OrdinalIgnoreCase) >= 0) score += 2500;
+            return score;
         }
 
         private static string GetAppUserModelId(Process process)
@@ -1091,7 +1131,7 @@ namespace OrbitWheelLite
             GlassPanel aboutCard = Card("关于 OrbitWheel", 0, 0, 858, 220);
             aboutCard.Controls.Add(L("OrbitWheel", 28, 62, 400, 40, 22, true));
             Label aboutHint = L("鼠标中心的六等分径向快捷操作工具", 30, 108, 620, 28, 10, false); aboutHint.ForeColor = Color.FromArgb(145, 180, 220); aboutCard.Controls.Add(aboutHint);
-            aboutCard.Controls.Add(L("OrbitWheel 1.0.1 · 已运行软件智能切换", 30, 153, 500, 24, 9, false));
+            aboutCard.Controls.Add(L("OrbitWheel 1.0.2 · 微信与 QQ 托盘唤醒", 30, 153, 500, 24, 9, false));
             about.Controls.Add(aboutCard);
             sections.Add(about);
 
