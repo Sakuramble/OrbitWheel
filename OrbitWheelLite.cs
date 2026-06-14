@@ -333,13 +333,35 @@ namespace OrbitWheelLite
 
         private void OnKey(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Escape) RequestClose();
+            if (e.KeyCode == Keys.Escape) {
+                RequestClose();
+                e.SuppressKeyPress = true;
+                return;
+            }
+            if (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right) {
+                ChangePage(e.KeyCode == Keys.Right ? 1 : -1);
+                e.SuppressKeyPress = true;
+                return;
+            }
+            int number = e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D6 ? (int)e.KeyCode - (int)Keys.D0 :
+                         e.KeyCode >= Keys.NumPad1 && e.KeyCode <= Keys.NumPad6 ? (int)e.KeyCode - (int)Keys.NumPad0 : 0;
+            if (number > 0) {
+                selected = number == 1 ? 5 : number - 2;
+                Invalidate();
+                RequestExecute();
+                e.SuppressKeyPress = true;
+            }
         }
 
         private void OnWheel(object sender, MouseEventArgs e)
         {
+            ChangePage(e.Delta < 0 ? 1 : -1);
+        }
+
+        private void ChangePage(int direction)
+        {
             if (config.Pages.Count < 2) return;
-            pageIndex = (pageIndex + (e.Delta < 0 ? 1 : -1) + config.Pages.Count) % config.Pages.Count;
+            pageIndex = (pageIndex + direction + config.Pages.Count) % config.Pages.Count;
             selected = -1;
             Invalidate();
         }
@@ -404,6 +426,7 @@ namespace OrbitWheelLite
                     using (Pen border = new Pen(Color.FromArgb(i == selected ? 220 : 46, 220, 240, 255), i == selected ? 2f : 1f)) g.DrawPath(border, path);
                 }
                 DrawAction(g, i);
+                DrawSectorNumber(g, i);
             }
 
             DrawRealtimeGlass(g);
@@ -470,6 +493,23 @@ namespace OrbitWheelLite
             Rectangle iconRect = new Rectangle(p.X - 28, p.Y - 28, 56, 56);
             ActionIcons.Draw(g, a, iconRect, i == selected);
         }
+
+        private void DrawSectorNumber(Graphics g, int i)
+        {
+            int number = ((i + 1) % 6) + 1;
+            double angle = i * Math.PI / 3;
+            int radius = 101;
+            Point p = new Point(center.X + (int)(Math.Cos(angle) * radius), center.Y + (int)(Math.Sin(angle) * radius));
+            using (Font font = new Font("Segoe UI", 9.5f, FontStyle.Bold))
+            using (SolidBrush background = new SolidBrush(Color.FromArgb(i == selected ? 150 : 92, 8, 18, 34)))
+            using (SolidBrush text = new SolidBrush(Color.FromArgb(230, 225, 242, 255))) {
+                Rectangle badge = new Rectangle(p.X - 11, p.Y - 11, 22, 22);
+                g.FillEllipse(background, badge);
+                StringFormat format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString(number.ToString(), font, text, badge, format);
+                format.Dispose();
+            }
+        }
     }
 
     static class ActionRunner
@@ -510,15 +550,20 @@ namespace OrbitWheelLite
         {
             string executable = ShortcutResolver.ResolveTarget(target);
             string appId = target.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase) ? target.Substring("shell:AppsFolder\\".Length) : "";
-            string processName = File.Exists(executable) ? Path.GetFileNameWithoutExtension(executable) : appId;
+            string processName = ResolveProcessName(executable, appId, displayName);
             IntPtr processMainWindow = FindVisibleProcessMainWindow(processName);
             if (processMainWindow != IntPtr.Zero) {
                 ActivateApplicationWindow(processMainWindow);
                 return;
             }
+            IntPtr visibleWindow = FindExistingWindow(executable, appId, displayName, true);
+            if (visibleWindow != IntPtr.Zero) {
+                ActivateApplicationWindow(visibleWindow);
+                return;
+            }
             bool running = IsApplicationRunning(processName, executable, appId);
             if (running && TryActivateFromWindowsTray(BuildTrayAliases(displayName, processName, executable))) return;
-            IntPtr existing = FindExistingWindow(executable, appId, displayName);
+            IntPtr existing = FindExistingWindow(executable, appId, displayName, false);
             if (existing != IntPtr.Zero) {
                 ActivateApplicationWindow(existing);
                 return;
@@ -527,6 +572,37 @@ namespace OrbitWheelLite
                 Start("explorer.exe", target);
             else
                 Start(target, "");
+        }
+
+        private static string ResolveProcessName(string executable, string appId, string displayName)
+        {
+            if (File.Exists(executable)) return Path.GetFileNameWithoutExtension(executable);
+            List<string> candidates = new List<string>();
+            if (!String.IsNullOrWhiteSpace(appId)) {
+                int bang = appId.LastIndexOf('!');
+                if (bang >= 0 && bang + 1 < appId.Length) AddProcessCandidate(candidates, appId.Substring(bang + 1));
+                string[] parts = appId.Split(new char[] { '.', '_', '!' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < parts.Length; i++) {
+                    if (String.Equals(parts[i], "EXE", StringComparison.OrdinalIgnoreCase) && i > 0) AddProcessCandidate(candidates, parts[i - 1]);
+                }
+                AddProcessCandidate(candidates, appId);
+            }
+            AddProcessCandidate(candidates, displayName);
+            foreach (string candidate in candidates) {
+                try { if (Process.GetProcessesByName(candidate).Length > 0) return candidate; } catch { }
+            }
+            return candidates.Count > 0 ? candidates[0] : "";
+        }
+
+        private static void AddProcessCandidate(List<string> candidates, string candidate)
+        {
+            if (String.IsNullOrWhiteSpace(candidate)) return;
+            candidate = candidate.Trim();
+            if (candidate.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) candidate = candidate.Substring(0, candidate.Length - 4);
+            if (String.Equals(candidate, "App", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(candidate, "Application", StringComparison.OrdinalIgnoreCase)) return;
+            if (candidate.IndexOf('\\') >= 0 || candidate.IndexOf('/') >= 0 || candidate.Length > 80) return;
+            if (!candidates.Exists(delegate(string value) { return String.Equals(value, candidate, StringComparison.OrdinalIgnoreCase); })) candidates.Add(candidate);
         }
 
         private static IntPtr FindVisibleProcessMainWindow(string processName)
@@ -655,6 +731,9 @@ namespace OrbitWheelLite
 
         private static bool TryClickTrayButton(AutomationElement root, List<string> aliases)
         {
+            System.Windows.Rect rootBounds;
+            try { rootBounds = root.Current.BoundingRectangle; }
+            catch { return false; }
             AutomationElementCollection buttons = root.FindAll(
                 TreeScope.Descendants,
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
@@ -665,6 +744,10 @@ namespace OrbitWheelLite
                 try {
                     if (!(button.Current.ClassName ?? "").StartsWith("SystemTray.", StringComparison.OrdinalIgnoreCase)) continue;
                     if (!String.Equals(button.Current.AutomationId, "NotifyItemIcon", StringComparison.OrdinalIgnoreCase)) continue;
+                    System.Windows.Rect bounds = button.Current.BoundingRectangle;
+                    double centerX = bounds.Left + bounds.Width / 2;
+                    double centerY = bounds.Top + bounds.Height / 2;
+                    if (!rootBounds.Contains(centerX, centerY)) continue;
                     string name = (button.Current.Name ?? "").Trim();
                     int score = GetTrayNameMatchScore(name, aliases);
                     if (score > bestScore) {
@@ -765,13 +848,14 @@ namespace OrbitWheelLite
             Native.SetForegroundWindow(hwnd);
         }
 
-        private static IntPtr FindExistingWindow(string executable, string appId, string displayName)
+        private static IntPtr FindExistingWindow(string executable, string appId, string displayName, bool visibleOnly)
         {
             string expectedPath = File.Exists(executable) ? Path.GetFullPath(executable) : "";
             string expectedProcess = expectedPath.Length > 0 ? Path.GetFileNameWithoutExtension(expectedPath) : "";
             IntPtr found = IntPtr.Zero;
             int bestScore = Int32.MinValue;
             Native.EnumWindows(delegate(IntPtr hwnd, IntPtr data) {
+                if (visibleOnly && !Native.IsWindowVisible(hwnd)) return true;
                 uint processId;
                 Native.GetWindowThreadProcessId(hwnd, out processId);
                 if (processId == 0) return true;
