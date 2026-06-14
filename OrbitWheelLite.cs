@@ -562,7 +562,7 @@ namespace OrbitWheelLite
                 return;
             }
             bool running = IsApplicationRunning(processName, executable, appId);
-            if (running && TryActivateFromWindowsTray(BuildTrayAliases(displayName, processName, executable))) return;
+            if (running && TryActivateFromWindowsTray(BuildTrayAliases(displayName, processName, executable), processName, executable, appId, displayName)) return;
             IntPtr existing = FindExistingWindow(executable, appId, displayName, false);
             if (existing != IntPtr.Zero) {
                 ActivateApplicationWindow(existing);
@@ -668,12 +668,13 @@ namespace OrbitWheelLite
             aliases.Add(alias);
         }
 
-        private static bool TryActivateFromWindowsTray(List<string> aliases)
+        private static bool TryActivateFromWindowsTray(List<string> aliases, string processName, string executable, string appId, string displayName)
         {
             if (aliases == null || aliases.Count == 0) return false;
             IntPtr oldDpiContext = Native.SetThreadDpiAwarenessContext(new IntPtr(-4));
             Native.NativePoint oldPosition;
             Native.GetCursorPos(out oldPosition);
+            bool clicked = false;
             try {
                 IntPtr taskbar = Native.FindWindow("Shell_TrayWnd", null);
                 Native.WindowRect taskbarRect;
@@ -691,27 +692,42 @@ namespace OrbitWheelLite
                 }
                 AutomationElement taskbarElement = taskbar != IntPtr.Zero ? AutomationElement.FromHandle(taskbar) : null;
                 AutomationElement overflowRoot = FindTrayOverflowRoot();
-                if (overflowRoot != null && TryClickTrayButton(overflowRoot, aliases)) return true;
-                if (taskbarElement != null && TryClickTrayButton(taskbarElement, aliases)) return true;
+                if (overflowRoot != null) clicked = TryClickTrayButton(overflowRoot, aliases);
+                if (!clicked && taskbarElement != null) clicked = TryClickTrayButton(taskbarElement, aliases);
 
-                AutomationElement overflow = taskbarElement != null ? FindTrayOverflowButton(taskbarElement) : null;
-                if (overflow != null && TryInvokeAutomationElement(overflow)) {
+                AutomationElement overflow = !clicked && taskbarElement != null ? FindTrayOverflowButton(taskbarElement) : null;
+                if (!clicked && overflow != null && TryInvokeAutomationElement(overflow)) {
                     overflowRoot = null;
                     for (int i = 0; i < 12 && overflowRoot == null; i++) {
                         System.Threading.Thread.Sleep(50);
                         overflowRoot = FindTrayOverflowRoot();
                     }
-                    if (overflowRoot != null && TryClickTrayButton(overflowRoot, aliases)) return true;
-                    Native.keybd_event(0x1B, 0, 0, UIntPtr.Zero);
-                    Native.keybd_event(0x1B, 0, 2, UIntPtr.Zero);
+                    if (overflowRoot != null) clicked = TryClickTrayButton(overflowRoot, aliases);
+                    if (!clicked) {
+                        Native.keybd_event(0x1B, 0, 0, UIntPtr.Zero);
+                        Native.keybd_event(0x1B, 0, 2, UIntPtr.Zero);
+                    }
                 }
+                if (clicked) WaitForApplicationWindow(processName, executable, appId, displayName, 8000);
             } catch { }
             finally {
                 Native.ClipCursor(IntPtr.Zero);
                 Native.SetCursorPos(oldPosition.X, oldPosition.Y);
                 Native.SetThreadDpiAwarenessContext(oldDpiContext);
             }
-            return false;
+            return clicked;
+        }
+
+        private static IntPtr WaitForApplicationWindow(string processName, string executable, string appId, string displayName, int timeoutMilliseconds)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
+            while (timer.ElapsedMilliseconds < timeoutMilliseconds) {
+                IntPtr hwnd = FindVisibleProcessMainWindow(processName);
+                if (hwnd == IntPtr.Zero) hwnd = FindExistingWindow(executable, appId, displayName, true);
+                if (hwnd != IntPtr.Zero) return hwnd;
+                System.Threading.Thread.Sleep(50);
+            }
+            return IntPtr.Zero;
         }
 
         private static Native.NativePoint GetTaskbarRevealPoint(Native.WindowRect rect)
