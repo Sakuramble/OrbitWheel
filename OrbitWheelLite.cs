@@ -7,6 +7,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Web.Script.Serialization;
+using System.Windows.Automation;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
@@ -132,6 +133,9 @@ namespace OrbitWheelLite
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
         [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hwnd, int command);
         [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr hwnd, bool altTab);
+        [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
         [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
         [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr data);
         [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
@@ -139,6 +143,10 @@ namespace OrbitWheelLite
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int count);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder text, int count);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out WindowRect rect);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string windowName);
+        [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+        [DllImport("user32.dll")] public static extern bool GetCursorPos(out NativePoint point);
+        [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern int GetApplicationUserModelId(IntPtr process, ref uint length, System.Text.StringBuilder appId);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfo(string path, uint attributes, ref ShellFileInfo info, uint size, uint flags);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHParseDisplayName(string name, IntPtr bindingContext, out IntPtr pidl, uint attributesIn, out uint attributesOut);
@@ -149,6 +157,8 @@ namespace OrbitWheelLite
         public struct ShellFileInfo { public IntPtr Icon; public int IconIndex; public uint Attributes; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName; }
         [StructLayout(LayoutKind.Sequential)]
         public struct WindowRect { public int Left; public int Top; public int Right; public int Bottom; }
+        [StructLayout(LayoutKind.Sequential)]
+        public struct NativePoint { public int X; public int Y; }
         public delegate IntPtr KeyboardProc(int code, IntPtr wp, IntPtr lp);
         public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr data);
     }
@@ -498,19 +508,169 @@ namespace OrbitWheelLite
         {
             string executable = ShortcutResolver.ResolveTarget(target);
             string appId = target.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase) ? target.Substring("shell:AppsFolder\\".Length) : "";
+            string processName = File.Exists(executable) ? Path.GetFileNameWithoutExtension(executable) : appId;
+            string shellAlias = GetShellActivationAlias(processName, displayName);
+            if (String.Equals(shellAlias, "微信", StringComparison.CurrentCultureIgnoreCase) && Process.GetProcessesByName("Weixin").Length > 0) {
+                TryActivateFromWindowsShell(shellAlias);
+                return;
+            }
+            if (String.Equals(shellAlias, "QQ", StringComparison.OrdinalIgnoreCase) && Process.GetProcessesByName("QQ").Length > 0) {
+                IntPtr qqMainWindow = FindProcessMainWindow("QQ");
+                if (qqMainWindow != IntPtr.Zero) ActivateApplicationWindow(qqMainWindow);
+                return;
+            }
             IntPtr existing = FindExistingWindow(executable, appId, displayName);
             if (existing != IntPtr.Zero) {
-                Native.ShowWindowAsync(existing, 9);
-                Native.ShowWindow(existing, 9);
-                Native.ShowWindow(existing, 5);
-                Native.BringWindowToTop(existing);
-                Native.SetForegroundWindow(existing);
+                ActivateApplicationWindow(existing);
                 return;
             }
             if (target.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
                 Start("explorer.exe", target);
             else
                 Start(target, "");
+        }
+
+        private static string GetShellActivationAlias(string processName, string displayName)
+        {
+            if (String.Equals(processName, "Weixin", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(displayName, "微信", StringComparison.CurrentCultureIgnoreCase)) return "微信";
+            if (String.Equals(processName, "QQ", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(displayName, "QQ", StringComparison.OrdinalIgnoreCase)) return "QQ";
+            return "";
+        }
+
+        private static IntPtr FindProcessMainWindow(string processName)
+        {
+            foreach (Process process in Process.GetProcessesByName(processName)) {
+                using (process) {
+                    try {
+                        if (process.MainWindowHandle != IntPtr.Zero) return process.MainWindowHandle;
+                    } catch { }
+                }
+            }
+            return IntPtr.Zero;
+        }
+
+        private static bool TryActivateFromWindowsShell(string alias)
+        {
+            IntPtr oldDpiContext = Native.SetThreadDpiAwarenessContext(new IntPtr(-4));
+            Native.NativePoint oldPosition;
+            Native.GetCursorPos(out oldPosition);
+            try {
+                IntPtr taskbar = Native.FindWindow("Shell_TrayWnd", null);
+                Native.WindowRect taskbarRect;
+                if (taskbar != IntPtr.Zero && Native.GetWindowRect(taskbar, out taskbarRect)) {
+                    Native.SetCursorPos((taskbarRect.Left + taskbarRect.Right) / 2, taskbarRect.Top + 1);
+                    System.Threading.Thread.Sleep(900);
+                }
+                AutomationElement root = AutomationElement.RootElement;
+                AutomationElement taskbarElement = taskbar != IntPtr.Zero ? AutomationElement.FromHandle(taskbar) : null;
+                if (taskbarElement != null && TryInvokeShellButton(taskbarElement, alias, true)) return true;
+                if (TryInvokeShellButton(root, alias, false)) return true;
+
+                AutomationElement overflow = taskbarElement != null ? FindShellButton(taskbarElement, "显示隐藏的图标", true) : null;
+                if (overflow != null && TryInvokeAutomationElement(overflow)) {
+                    System.Threading.Thread.Sleep(350);
+                    AutomationElement overflowRoot = FindElementByName(root, "系统托盘溢出窗口。", TreeScope.Children);
+                    if (overflowRoot != null && TryInvokeShellButton(overflowRoot, alias, true)) return true;
+                    Native.keybd_event(0x1B, 0, 0, UIntPtr.Zero);
+                    Native.keybd_event(0x1B, 0, 2, UIntPtr.Zero);
+                    System.Threading.Thread.Sleep(180);
+                }
+            } catch { }
+            finally {
+                Native.SetCursorPos(oldPosition.X, oldPosition.Y);
+                Native.SetThreadDpiAwarenessContext(oldDpiContext);
+            }
+            return false;
+        }
+
+        private static bool TryInvokeShellButton(AutomationElement root, string alias, bool trayOnly)
+        {
+            AutomationElement searchRoot = root;
+            if (!trayOnly) {
+                IntPtr taskbar = Native.FindWindow("Shell_TrayWnd", null);
+                if (taskbar == IntPtr.Zero) return false;
+                searchRoot = AutomationElement.FromHandle(taskbar);
+            }
+            if (trayOnly) {
+                AutomationElement trayButton = FindShellButton(root, alias, true);
+                return trayButton != null && TryInvokeAutomationElement(trayButton);
+            }
+            AutomationElementCollection buttons = searchRoot.FindAll(
+                TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            for (int i = 0; i < buttons.Count; i++) {
+                AutomationElement button = buttons[i];
+                string className;
+                string name;
+                try {
+                    className = button.Current.ClassName ?? "";
+                    name = (button.Current.Name ?? "").Trim();
+                } catch { continue; }
+                bool isTaskbar = className.Equals("Taskbar.TaskListButtonAutomationPeer", StringComparison.OrdinalIgnoreCase);
+                if (!isTaskbar) continue;
+                if (!String.Equals(name, alias, StringComparison.CurrentCultureIgnoreCase) &&
+                    !name.StartsWith(alias + " - ", StringComparison.CurrentCultureIgnoreCase)) continue;
+                if (TryInvokeAutomationElement(button)) return true;
+                if (isTaskbar && TryClickAutomationElement(button)) return true;
+            }
+            return false;
+        }
+
+        private static AutomationElement FindShellButton(AutomationElement root, string name, bool trayOnly)
+        {
+            string[] candidates = new string[] { name, " " + name };
+            for (int i = 0; i < candidates.Length; i++) {
+                List<Condition> conditions = new List<Condition>();
+                conditions.Add(new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+                conditions.Add(new PropertyCondition(AutomationElement.NameProperty, candidates[i], PropertyConditionFlags.IgnoreCase));
+                AutomationElement button = root.FindFirst(TreeScope.Descendants, new AndCondition(conditions.ToArray()));
+                if (button != null) {
+                    if (!trayOnly || (button.Current.ClassName ?? "").StartsWith("SystemTray.", StringComparison.OrdinalIgnoreCase)) return button;
+                }
+            }
+            return null;
+        }
+
+        private static AutomationElement FindElementByName(AutomationElement root, string name, TreeScope scope)
+        {
+            return root.FindFirst(scope, new PropertyCondition(AutomationElement.NameProperty, name, PropertyConditionFlags.IgnoreCase));
+        }
+
+        private static bool TryInvokeAutomationElement(AutomationElement element)
+        {
+            try {
+                object pattern;
+                if (!element.TryGetCurrentPattern(InvokePattern.Pattern, out pattern)) return false;
+                ((InvokePattern)pattern).Invoke();
+                return true;
+            } catch { return false; }
+        }
+
+        private static bool TryClickAutomationElement(AutomationElement element)
+        {
+            try {
+                System.Windows.Rect rect = element.Current.BoundingRectangle;
+                if (rect.IsEmpty || rect.Width < 2 || rect.Height < 2) return false;
+                Native.NativePoint oldPosition;
+                Native.GetCursorPos(out oldPosition);
+                Native.SetCursorPos((int)(rect.Left + rect.Width / 2), (int)(rect.Top + rect.Height / 2));
+                Native.mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+                Native.mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+                Native.SetCursorPos(oldPosition.X, oldPosition.Y);
+                return true;
+            } catch { return false; }
+        }
+
+        private static void ActivateApplicationWindow(IntPtr hwnd)
+        {
+            const uint WM_SYSCOMMAND = 0x0112;
+            const int SC_RESTORE = 0xF120;
+            Native.PostMessage(hwnd, WM_SYSCOMMAND, new IntPtr(SC_RESTORE), IntPtr.Zero);
+            Native.SwitchToThisWindow(hwnd, true);
+            Native.BringWindowToTop(hwnd);
+            Native.SetForegroundWindow(hwnd);
         }
 
         private static IntPtr FindExistingWindow(string executable, string appId, string displayName)
@@ -568,8 +728,8 @@ namespace OrbitWheelLite
             int width = Math.Max(0, rect.Right - rect.Left);
             int height = Math.Max(0, rect.Bottom - rect.Top);
             if (width < 200 || height < 150) return Int32.MinValue;
-            int score = Math.Min(2000, (width * height) / 500);
-            if (Native.IsWindowVisible(hwnd)) score += 10000;
+            int score = Math.Min(10000, (width * height) / 100);
+            if (Native.IsWindowVisible(hwnd)) score += 300;
             if (!String.IsNullOrWhiteSpace(windowTitle)) score += 1200;
             if (!String.IsNullOrWhiteSpace(displayName) && String.Equals(windowTitle, displayName, StringComparison.CurrentCultureIgnoreCase)) score += 6000;
             else if (!String.IsNullOrWhiteSpace(displayName) && windowTitle.IndexOf(displayName, StringComparison.CurrentCultureIgnoreCase) >= 0) score += 3000;

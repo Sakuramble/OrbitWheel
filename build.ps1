@@ -4,6 +4,7 @@ $dist = Join-Path $root 'dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
 $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+$wpf = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\WPF"
 & $csc /nologo /codepage:65001 /target:winexe /optimize+ `
     /win32icon:"$root\OrbitWheel.ico" `
     /out:"$dist\OrbitWheel.exe" `
@@ -11,6 +12,9 @@ $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
     /reference:System.Drawing.dll `
     /reference:System.Windows.Forms.dll `
     /reference:System.Web.Extensions.dll `
+    /reference:"$wpf\UIAutomationClient.dll" `
+    /reference:"$wpf\UIAutomationTypes.dll" `
+    /reference:"$wpf\WindowsBase.dll" `
     /resource:"$root\assets\system-icons-sheet.png",OrbitWheel.SystemIcons `
     "$root\OrbitWheelLite.cs"
 
