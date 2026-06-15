@@ -12,11 +12,11 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("OrbitWheel")]
-[assembly: AssemblyDescription("OrbitWheel 1.1.0 - 径向快捷操作中心")]
+[assembly: AssemblyDescription("OrbitWheel 1.1.1 - 径向快捷操作中心")]
 [assembly: AssemblyCompany("OrbitWheel")]
 [assembly: AssemblyProduct("OrbitWheel")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.1.1.0")]
+[assembly: AssemblyFileVersion("1.1.1.0")]
 
 namespace OrbitWheelLite
 {
@@ -149,6 +149,7 @@ namespace OrbitWheelLite
         [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
         [DllImport("user32.dll")] public static extern bool ClipCursor(ref WindowRect rect);
         [DllImport("user32.dll")] public static extern bool ClipCursor(IntPtr rect);
+        [DllImport("user32.dll")] public static extern uint GetDoubleClickTime();
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern int GetApplicationUserModelId(IntPtr process, ref uint length, System.Text.StringBuilder appId);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SHGetFileInfo(string path, uint attributes, ref ShellFileInfo info, uint size, uint flags);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHParseDisplayName(string name, IntPtr bindingContext, out IntPtr pidl, uint attributesIn, out uint attributesOut);
@@ -847,9 +848,13 @@ namespace OrbitWheelLite
                 Native.WindowRect cursorLock = new Native.WindowRect { Left = x, Top = y, Right = x + 1, Bottom = y + 1 };
                 Native.ClipCursor(ref cursorLock);
                 Native.SetCursorPos(x, y);
-                Native.mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
-                System.Threading.Thread.Sleep(20);
-                Native.mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+                int interval = Math.Max(40, Math.Min(160, (int)Native.GetDoubleClickTime() / 3));
+                for (int i = 0; i < 2; i++) {
+                    Native.mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+                    System.Threading.Thread.Sleep(20);
+                    Native.mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+                    if (i == 0) System.Threading.Thread.Sleep(interval);
+                }
                 return true;
             } catch { return false; }
         }
@@ -1483,7 +1488,7 @@ namespace OrbitWheelLite
             GlassPanel aboutCard = Card("关于 OrbitWheel", 0, 0, 858, 220);
             aboutCard.Controls.Add(L("OrbitWheel", 28, 62, 400, 40, 22, true));
             Label aboutHint = L("鼠标中心的六等分径向快捷操作工具", 30, 108, 620, 28, 10, false); aboutHint.ForeColor = Color.FromArgb(145, 180, 220); aboutCard.Controls.Add(aboutHint);
-            aboutCard.Controls.Add(L("OrbitWheel 1.1.0 · 通用托盘应用唤醒", 30, 153, 500, 24, 9, false));
+            aboutCard.Controls.Add(L("OrbitWheel 1.1.1 · 通用托盘双击唤醒", 30, 153, 500, 24, 9, false));
             about.Controls.Add(aboutCard);
             sections.Add(about);
 
