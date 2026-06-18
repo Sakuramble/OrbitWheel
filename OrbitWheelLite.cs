@@ -12,11 +12,11 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("OrbitWheel")]
-[assembly: AssemblyDescription("OrbitWheel 1.1.1 - 径向快捷操作中心")]
+[assembly: AssemblyDescription("OrbitWheel 1.1.2 - 径向快捷操作中心")]
 [assembly: AssemblyCompany("OrbitWheel")]
 [assembly: AssemblyProduct("OrbitWheel")]
-[assembly: AssemblyVersion("1.1.1.0")]
-[assembly: AssemblyFileVersion("1.1.1.0")]
+[assembly: AssemblyVersion("1.1.2.0")]
+[assembly: AssemblyFileVersion("1.1.2.0")]
 
 namespace OrbitWheelLite
 {
@@ -253,7 +253,8 @@ namespace OrbitWheelLite
             DoubleBuffered = true;
             Cursor = Cursors.Cross;
             Size = new Size(510, 510);
-            Point mouse = Cursor.Position;
+            Point mouse = ClampCenterToVisibleScreen(Cursor.Position);
+            if (mouse != Cursor.Position) Cursor.Position = mouse;
             Location = new Point(mouse.X - Width / 2, mouse.Y - Height / 2);
             center = new Point(Width / 2, Height / 2);
             BackColor = Color.FromArgb(1, 2, 3);
@@ -267,6 +268,16 @@ namespace OrbitWheelLite
             MouseWheel += OnWheel;
             KeyDown += OnKey;
             Deactivate += delegate { if (config.Mode == "Click" && Visible) RequestClose(); };
+        }
+
+        private Point ClampCenterToVisibleScreen(Point requested)
+        {
+            Rectangle bounds = Screen.FromPoint(requested).Bounds;
+            int halfWidth = Width / 2;
+            int halfHeight = Height / 2;
+            int x = Math.Max(bounds.Left + halfWidth, Math.Min(requested.X, bounds.Right - halfWidth));
+            int y = Math.Max(bounds.Top + halfHeight, Math.Min(requested.Y, bounds.Bottom - halfHeight));
+            return new Point(x, y);
         }
 
         protected override void OnShown(EventArgs e)
@@ -520,6 +531,7 @@ namespace OrbitWheelLite
             try {
                 switch (a.Type) {
                     case "App": ActivateOrStart(a.Target, a.Name); break;
+                    case "Folder": OpenFolder(a.Target); break;
                     case "Explorer": Start("explorer.exe", "shell:ThisPCFolder"); break;
                     case "Settings": showSettings(); break;
                     case "Lock": Native.LockWorkStation(); break;
@@ -545,6 +557,14 @@ namespace OrbitWheelLite
             ProcessStartInfo info = new ProcessStartInfo(file, args);
             info.UseShellExecute = true;
             Process.Start(info);
+        }
+
+        private static void OpenFolder(string path)
+        {
+            if (String.IsNullOrWhiteSpace(path)) return;
+            string expanded = Environment.ExpandEnvironmentVariables(path.Trim());
+            if (!Directory.Exists(expanded)) throw new DirectoryNotFoundException(expanded);
+            Start("explorer.exe", "\"" + expanded + "\"");
         }
 
         private static void ActivateOrStart(string target, string displayName)
@@ -982,7 +1002,7 @@ namespace OrbitWheelLite
 
         public static void Draw(Graphics g, ActionItem a, Rectangle r, bool selected)
         {
-            if (a.Type == "App") {
+            if (a.Type == "App" || a.Type == "Folder") {
                 using (Icon appIcon = GetApplicationIcon(a.Target)) if (appIcon != null) { g.DrawIcon(appIcon, r); return; }
             }
             if (DrawGeneratedSystemIcon(g, a.Type, r)) return;
@@ -1005,6 +1025,7 @@ namespace OrbitWheelLite
                         }
                         break;
                     case "Explorer":
+                    case "Folder":
                         g.DrawRectangle(p, x + 9, y + 16, w - 18, h - 24);
                         g.DrawLine(p, x + 10, y + 16, x + 20, y + 10);
                         g.DrawLine(p, x + 20, y + 10, x + 29, y + 16);
@@ -1118,7 +1139,7 @@ namespace OrbitWheelLite
     static class ActionNames
     {
         private static readonly Dictionary<string, string> Names = new Dictionary<string, string> {
-            {"None","无操作"}, {"App","打开程序"}, {"Command","执行命令"},
+            {"None","无操作"}, {"App","打开程序"}, {"Folder","打开文件夹"}, {"Command","执行命令"},
             {"Explorer","打开资源管理器"}, {"Settings","打开 OrbitWheel 设置"},
             {"Lock","锁定电脑"}, {"Sleep","进入睡眠"}, {"Shutdown","关闭电脑"},
             {"Restart","重新启动"}, {"VolumeUp","增大音量"}, {"VolumeDown","减小音量"},
@@ -1133,7 +1154,7 @@ namespace OrbitWheelLite
         public static object[] AllChinese()
         {
             List<object> result = new List<object>();
-            foreach (string id in new string[] { "None","App","Command","Explorer","Settings","Lock","Sleep","Shutdown","Restart","VolumeUp","VolumeDown","Mute" })
+            foreach (string id in new string[] { "None","App","Folder","Command","Explorer","Settings","Lock","Sleep","Shutdown","Restart","VolumeUp","VolumeDown","Mute" })
                 result.Add(Chinese(id));
             return result.ToArray();
         }
@@ -1443,14 +1464,14 @@ namespace OrbitWheelLite
             typeCol.FlatStyle = FlatStyle.Flat;
             typeCol.Items.AddRange(ActionNames.AllChinese());
             grid.Columns.Add(typeCol);
-            grid.Columns.Add("target", "程序路径 / 命令");
+            grid.Columns.Add("target", "程序路径 / 文件夹 / 命令");
             grid.Columns[0].ReadOnly = true;
             grid.Columns[0].FillWeight = 45; grid.Columns[1].FillWeight = 80; grid.Columns[2].FillWeight = 90; grid.Columns[3].FillWeight = 170;
             grid.CurrentCellDirtyStateChanged += delegate { if (grid.IsCurrentCellDirty) grid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
             grid.CellValueChanged += delegate { HandleCellChange(); };
             grid.SelectionChanged += delegate { UpdateActionEditor(); };
             pageBox.Controls.Add(grid);
-            Label appHint = L("选择“打开程序”后，可从 Applications 或普通文件窗口选择。", 220, 520, 590, 25, 8, false); appHint.ForeColor = Color.FromArgb(125, 166, 210); pageBox.Controls.Add(appHint);
+            Label appHint = L("选择“打开程序”会打开应用选择器；选择“打开文件夹”会打开文件夹选择器。", 220, 520, 590, 25, 8, false); appHint.ForeColor = Color.FromArgb(125, 166, 210); pageBox.Controls.Add(appHint);
             pageSection.Controls.Add(pageBox);
             sections.Add(pageSection);
 
@@ -1488,7 +1509,7 @@ namespace OrbitWheelLite
             GlassPanel aboutCard = Card("关于 OrbitWheel", 0, 0, 858, 220);
             aboutCard.Controls.Add(L("OrbitWheel", 28, 62, 400, 40, 22, true));
             Label aboutHint = L("鼠标中心的六等分径向快捷操作工具", 30, 108, 620, 28, 10, false); aboutHint.ForeColor = Color.FromArgb(145, 180, 220); aboutCard.Controls.Add(aboutHint);
-            aboutCard.Controls.Add(L("OrbitWheel 1.1.1 · 通用托盘双击唤醒", 30, 153, 500, 24, 9, false));
+            aboutCard.Controls.Add(L("OrbitWheel 1.1.2 · 文件夹目标与边缘自适应", 30, 153, 500, 24, 9, false));
             about.Controls.Add(aboutCard);
             sections.Add(about);
 
@@ -1540,6 +1561,7 @@ namespace OrbitWheelLite
             if (grid.CurrentRow != null && grid.CurrentCell != null && grid.CurrentCell.ColumnIndex == 2) {
                 string type = ActionNames.Id(Convert.ToString(grid.CurrentRow.Cells[2].Value));
                 if (type == "App") BrowseApp();
+                if (type == "Folder") BrowseFolder();
             }
             AutoSave();
         }
@@ -1548,8 +1570,8 @@ namespace OrbitWheelLite
         {
             if (grid == null || grid.CurrentRow == null) return;
             string type = ActionNames.Id(Convert.ToString(grid.CurrentRow.Cells[2].Value));
-            grid.CurrentRow.Cells[3].ReadOnly = type != "App" && type != "Command";
-            if (type != "App" && type != "Command") grid.CurrentRow.Cells[3].Value = "";
+            grid.CurrentRow.Cells[3].ReadOnly = type != "App" && type != "Folder" && type != "Command";
+            if (type != "App" && type != "Folder" && type != "Command") grid.CurrentRow.Cells[3].Value = "";
         }
 
         private void UpdateEffectDescription()
@@ -1600,6 +1622,26 @@ namespace OrbitWheelLite
                     grid.CurrentRow.Cells[1].Value = d.SelectedApplication.Name;
                     grid.CurrentRow.Cells[2].Value = ActionNames.Chinese("App");
                     grid.CurrentRow.Cells[3].Value = d.SelectedApplication.Target;
+                }
+            }
+            choosingApp = false;
+            CommitPage();
+            AutoSave();
+        }
+
+        private void BrowseFolder()
+        {
+            if (grid.CurrentRow == null || choosingApp) return;
+            choosingApp = true;
+            using (FolderBrowserDialog d = new FolderBrowserDialog()) {
+                d.Description = "选择要打开的文件夹";
+                d.ShowNewFolderButton = true;
+                if (d.ShowDialog(this) == DialogResult.OK && Directory.Exists(d.SelectedPath)) {
+                    grid.CurrentRow.Cells[1].Value = Path.GetFileName(d.SelectedPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    if (String.IsNullOrWhiteSpace(Convert.ToString(grid.CurrentRow.Cells[1].Value)))
+                        grid.CurrentRow.Cells[1].Value = d.SelectedPath;
+                    grid.CurrentRow.Cells[2].Value = ActionNames.Chinese("Folder");
+                    grid.CurrentRow.Cells[3].Value = d.SelectedPath;
                 }
             }
             choosingApp = false;
