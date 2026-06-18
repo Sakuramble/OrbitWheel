@@ -1,42 +1,56 @@
 # OrbitWheel
 
-OrbitWheel 是一款 Windows 径向快捷操作工具。按下自定义快捷键后，鼠标位置会出现六等分圆环，将鼠标移向目标扇区即可快速执行操作。
+<p align="center">
+  <a href="#中文"><kbd>🇨🇳 中文</kbd></a>
+  <a href="#english"><kbd>🇬🇧 English</kbd></a>
+</p>
+
+<a id="中文"></a>
+
+## 中文
+
+**OrbitWheel** 是一款 Windows 径向快捷操作工具。按下自定义快捷键后，鼠标位置会弹出六等分圆环；将鼠标移向目标扇区并松开，即可快速启动应用、打开文件夹或执行常用系统操作。
+
+它适合需要频繁切换软件、打开常用位置、执行电源/音量/锁屏等操作的 Windows 用户。相比传统启动器，OrbitWheel 更强调“鼠标原地召出、方向选择、快速执行”的操作体验。
 
 ## OrbitWheel 1.1.2
 
-OrbitWheel 1.1.2 延续全新设计的深色玻璃 UI、整套系统操作图标和通用托盘双击唤醒机制，并加入文件夹目标与圆环边缘自适应：
+OrbitWheel 1.1.2 延续深色玻璃 UI、系统操作图标和托盘唤醒机制，并加入文件夹目标与圆环边缘自适应：
 
 ![OrbitWheel 1.0 全新 UI](design/orbitwheel-1.0-ui.png)
 
-- 全新设置界面：左侧导航、玻璃卡片和分区设置页面
-- 全新纯图标径向菜单，环内不显示动作名称
-- 重新设计睡眠、音量、锁定、关机、重启等系统操作图标
-- Applications 应用选择器，可识别 Store/UWP 和桌面应用图标
-- 支持直接浏览普通程序文件
-- 支持把文件夹设为动作目标，并直接用资源管理器打开对应文件夹
-- 打开软件前检测运行状态，桌面程序与 Store/UWP 应用已运行时切换至现有窗口
-- 已运行但关闭到托盘的软件会通过 Windows 托盘项模拟双击唤醒，同时兼容要求单击或双击恢复的应用
-- 托盘双击唤醒期间持续锁定鼠标，检测到目标软件正常窗口出现后才解除；异常情况下最多等待 8 秒
-- Store/AppsFolder 应用会解析真实进程名；存在正常可见页面时直接切换，仅关闭到托盘时模拟双击
-- 快捷键支持直接录制任意组合键
-- 默认使用“按住并松开执行”模式
-- 扇区从右上开始顺时针编号 `1–6`，按对应数字键可直接执行
-- 鼠标滚轮或左右方向键切换页面，支持无限页面
-- 鼠标靠近屏幕边缘时会自动把圆环和鼠标移到可完整显示的位置
-- 设置修改后自动保存
-- 支持随 Windows 启动并常驻系统托盘
+## 功能特点
 
-### 全新系统图标设计
+- 六等分径向菜单，扇区从右上开始顺时针编号 `1–6`。
+- 支持按住快捷键并松开执行，也支持数字键直接执行对应扇区。
+- 鼠标滚轮或左右方向键切换页面，支持无限页面。
+- 支持启动桌面程序、Store/UWP 应用和普通程序文件。
+- 支持把文件夹设为动作目标，并通过资源管理器打开。
+- 打开软件前检测运行状态；目标已运行时优先切换到现有窗口。
+- 对关闭到系统托盘的软件提供唤醒兼容逻辑，减少重复启动。
+- 全新设置界面：左侧导航、玻璃卡片和分区配置页面。
+- 全新纯图标径向菜单，环内不显示动作名称。
+- 重新设计睡眠、音量、锁定、关机、重启等系统操作图标。
+- 鼠标靠近屏幕边缘时，圆环会自动移动到可完整显示的位置。
+- 设置修改后自动保存。
+- 支持随 Windows 启动并常驻系统托盘。
+
+### 系统图标设计
 
 ![OrbitWheel 1.0 系统图标](assets/system-icons-sheet.png)
 
-## 使用
+## 使用方法
 
-1. 下载对应版本的 `OrbitWheel-1.1.2.zip`。
+1. 下载 `OrbitWheel-1.1.2.zip`。
 2. 解压后运行 `OrbitWheel.exe`。
 3. 双击托盘图标打开设置。
+4. 录制快捷键，配置每个扇区的动作。
 
-配置保存在 `%APPDATA%\OrbitWheel\config.json`。
+配置文件保存在：
+
+```text
+%APPDATA%\OrbitWheel\config.json
+```
 
 ## 构建
 
@@ -46,8 +60,79 @@ OrbitWheel 1.1.2 延续全新设计的深色玻璃 UI、整套系统操作图标
 .\build.ps1
 ```
 
-构建结果位于 `dist\OrbitWheel.exe`。
+构建结果位于：
+
+```text
+dist\OrbitWheel.exe
+```
 
 ## 许可证
+
+[MIT License](LICENSE)
+
+---
+
+<a id="english"></a>
+
+## English
+
+**OrbitWheel** is a radial shortcut launcher for Windows. Press a custom hotkey and a six-section command wheel appears at the mouse position; move toward a sector and release to launch an app, open a folder, or run a common system action.
+
+It is designed for Windows users who frequently switch apps, open repeated locations, or trigger power, volume, lock, and other system actions. Instead of a traditional launcher window, OrbitWheel focuses on an in-place, direction-based workflow.
+
+## OrbitWheel 1.1.2
+
+OrbitWheel 1.1.2 keeps the dark glass UI, system action icons, and tray wake-up compatibility, while adding folder targets and edge-aware wheel positioning:
+
+![OrbitWheel 1.0 New UI](design/orbitwheel-1.0-ui.png)
+
+## Features
+
+- Six-section radial menu, numbered clockwise from the upper-right sector as `1–6`.
+- Supports hold-and-release execution and direct sector execution with number keys.
+- Switch pages with the mouse wheel or left/right arrow keys; unlimited pages are supported.
+- Launch desktop programs, Store/UWP apps, and regular executable files.
+- Use folders as action targets and open them with File Explorer.
+- Detects whether a target app is already running and switches to the existing window when possible.
+- Provides tray wake-up compatibility for apps minimized to the system tray, reducing duplicate launches.
+- Redesigned settings window with side navigation, glass cards, and section-based configuration pages.
+- Icon-only radial menu without action names inside the wheel.
+- Redesigned icons for sleep, volume, lock, shutdown, restart, and other system actions.
+- Automatically repositions the wheel near screen edges so the full menu remains visible.
+- Saves settings automatically after changes.
+- Supports Windows startup and persistent system tray operation.
+
+### System Icon Design
+
+![OrbitWheel 1.0 System Icons](assets/system-icons-sheet.png)
+
+## Usage
+
+1. Download `OrbitWheel-1.1.2.zip`.
+2. Extract it and run `OrbitWheel.exe`.
+3. Double-click the tray icon to open settings.
+4. Record a hotkey and configure actions for each sector.
+
+Configuration is saved at:
+
+```text
+%APPDATA%\OrbitWheel\config.json
+```
+
+## Build
+
+Requirements: Windows PowerShell 5.1 and .NET Framework 4.x.
+
+```powershell
+.\build.ps1
+```
+
+The build output is located at:
+
+```text
+dist\OrbitWheel.exe
+```
+
+## License
 
 [MIT License](LICENSE)
