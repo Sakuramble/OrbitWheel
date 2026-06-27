@@ -27,7 +27,12 @@
 ![Build](https://img.shields.io/badge/Build-PowerShell%205.1-7C3AED)
 ![License](https://img.shields.io/badge/License-MIT-FF5722)
 ![Release](https://img.shields.io/github/v/release/V0idream/OrbitWheel?include_prereleases)
-![Downloads](https://img.shields.io/github/downloads/V0idream/OrbitWheel/total)
+
+<p>
+  <a href="https://github.com/V0idream/OrbitWheel/releases">
+    <img src="https://img.shields.io/github/downloads/V0idream/OrbitWheel/total?label=Release%20Downloads&style=for-the-badge" alt="Release Downloads" />
+  </a>
+</p>
 
 </div>
 
